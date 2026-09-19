@@ -54808,6 +54808,22 @@ const foam = [];
   }
 }
 
+/* ---------- sun / moon glints on the water ---------- */
+const glints = [];
+const cGlintNight = new THREE.Color(0xaac4e8);
+{
+  const spots = [ [waterCenterX(90), 90, 7], [LAKE_CX, LAKE_CZ, 12], [waterCenterX(-70), -70, 5.5] ];
+  for (const [gx, gz, gs] of spots){
+    const g = new THREE.Mesh(new THREE.CircleGeometry(gs * 0.5, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    g.rotation.x = -Math.PI / 2;
+    g.position.set(gx, WATER_Y + 0.12, gz);
+    g.renderOrder = 2;
+    scene.add(g);
+    glints.push({ m: g, ph: hash(gx, gz + 7) * 6.28 });
+  }
+}
+
 /* ============================================================
    THE CITY
    ============================================================ */
@@ -55113,6 +55129,14 @@ columns(rubbleCells, lamber(0xffffff));
   /* hands frozen at 4:17 */
   cells.push({ x: X - 0.55, z: Z - 3.7, y: 18.1, sy: 1.5, sx: 0.09, sz: 0.05, rz: -0.9, color: 0x2c2c2c });
   cells.push({ x: X + 0.7, z: Z - 3.7, y: 18.6, sy: 1.0, sx: 0.07, sz: 0.05, rz: 2.4, color: 0x2c2c2c });
+  /* big face on the north shaft: dark frame, cream dial, ticks, hands frozen at 4:17 (cell y = box bottom) */
+  cells.push({ x: X, z: Z - 5.06, y: 10.8, sy: 5.2, sx: 5.2, sz: 0.1, color: 0x3a322a });
+  cells.push({ x: X, z: Z - 5.1, y: 11.1, sy: 4.6, sx: 4.6, sz: 0.1, color: 0xd8d2c2 });
+  for(const [tx, ty, sw, sh] of [[X, 15.1, 0.16, 0.5], [X - 1.75, 13.32, 0.5, 0.16], [X, 11.2, 0.16, 0.5], [X + 1.75, 13.32, 0.5, 0.16]])
+    cells.push({ x: tx, z: Z - 5.14, y: ty, sy: sh, sx: sw, sz: 0.1, color: 0x3a322a });
+  cells.push({ x: X, z: Z - 5.18, y: 13.33, sy: 0.14, sx: 0.14, sz: 0.1, color: 0x2c2c2c });
+  cells.push({ x: X, z: Z - 5.18, y: 13.4, sy: 1.5, sx: 0.12, sz: 0.1, rz: 2.24, color: 0x2c2c2c });
+  cells.push({ x: X, z: Z - 5.18, y: 13.4, sy: 2.1, sx: 0.09, sz: 0.1, rz: 1.78, color: 0x2c2c2c });
   /* collapsed roof: two slanted slabs, one missing */
   cells.push({ x: X - 1.2, z: Z, y: 21.5, sy: 0.5, sx: 4.4, sz: 7.4, rz: 0.42, color: concColor(703, 0.3) });
   cells.push({ x: X + 2.2, z: Z + 1.4, y: 21.2, sy: 0.5, sx: 3.6, sz: 5.2, rz: -0.5, ry: 0.2, color: concColor(704, 0.28) });
@@ -56256,11 +56280,19 @@ function treeRoof(x, z, baseY, h, seed){
     if (groundH(x, z) > 1.5) continue;
     const flat = hash(i, 60) < 0.35;   /* some low and wide, some tall and narrow */
     const s = 0.5 + hash(i, 33) * 0.9;
-    cells.push({ x, z, y: groundH(x, z),
-      sy: flat ? 0.45 + hash(i, 61) * 0.5 : s * (0.8 + hash(i, 61) * 0.9),
-      sx: flat ? s * (1.6 + hash(i, 62) * 0.8) : s * 0.9,
-      sz: flat ? s * (1.6 + hash(i, 63) * 0.8) : s * 0.8,
-      ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+    if (flat){
+      /* low shrub: capped width (was up to ~3.4 — read as a toy block) + a lumpy offset top box */
+      const w1 = 0.8 + hash(i, 62) * 0.9, d1 = 0.7 + hash(i, 63) * 0.8;
+      cells.push({ x, z, y: groundH(x, z), sy: 0.4 + hash(i, 61) * 0.35, sx: w1, sz: d1,
+        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+      cells.push({ x: x + (hash(i, 71) - 0.5) * w1 * 0.5, z: z + (hash(i, 72) - 0.5) * d1 * 0.5,
+        y: groundH(x, z) + 0.26, sy: 0.3 + hash(i, 73) * 0.3, sx: w1 * 0.55, sz: d1 * 0.55,
+        ry: hash(i, 34) * 3 + 0.5, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
+    } else {
+      cells.push({ x, z, y: groundH(x, z),
+        sy: s * (0.8 + hash(i, 61) * 0.9), sx: s * 0.9, sz: s * 0.8,
+        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+    }
   }
   const bushMesh = columns(cells, lamber(0xffffff));
   if (bushMesh) registerSeasonFoliage(bushMesh, 'bush');
@@ -56437,8 +56469,9 @@ const SKY_KEYS = [
   [8.0,  '#6a8aa8', '#9ab0b8', '#e8d8b0', 0xffeec8, 1.15, 0.55, 0.95, '#c8d0b8'],
   [12.0, '#7aa0b8', '#a8c0c8', '#e0e0d0', 0xfff4d8, 1.30, 0.60, 1.05, '#d8d2ba'],
   [16.5, '#6a90a8', '#a0b0b8', '#e8d0a0', 0xffe0a8, 1.15, 0.55, 0.95, '#d0c8a8'],
-  [18.6, '#4a5a78', '#b87858', '#f0a050', 0xffb060, 0.60, 0.45, 0.60, '#c89878'],
-  [20.2, '#1a2438', '#3a3850', '#684858', 0xc8a8a0, 0.05, 0.18, 0.22, '#28303e'],
+  [18.6, '#4a5a78', '#b87858', '#f0a050', 0xffa050, 0.78, 0.48, 0.62, '#c89878'],
+  [19.7, '#2a3250', '#8a6478', '#d08870', 0xf09878, 0.42, 0.34, 0.44, '#a88478'],
+  [20.6, '#1a2438', '#3a3850', '#684858', 0xc8a8a0, 0.05, 0.18, 0.22, '#28303e'],
   [22.0, '#0b1220', '#1a2438', '#2a3448', 0xbac8e8, 0.00, 0.10, 0.12, '#141a24'],
   [24.0, '#0b1220', '#1a2438', '#2a3448', 0xbac8e8, 0.00, 0.10, 0.12, '#141a24'],
 ];
@@ -57422,8 +57455,8 @@ function stepFrame(dt){
     const pos = waterGeo.attributes.position;
     for(let i = 0; i < waterRows.length; i++){
       const r = waterRows[i];
-      pos.setY(i*6+1, WATER_Y + 0.05*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3));
-      pos.setY(i*6+4, WATER_Y + 0.05*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3));
+      pos.setY(i*6+1, WATER_Y + 0.06*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + tSim*0.45));
+      pos.setY(i*6+4, WATER_Y + 0.06*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + 0.8 + tSim*0.45));
     }
     pos.needsUpdate = true;
     waterGeo.computeVertexNormals();
@@ -57437,6 +57470,11 @@ function stepFrame(dt){
       f.m.position.set(cx + f.off * ww, WATER_Y + 0.07 + Math.sin(tSim * 0.9 + f.ph) * 0.02, f.z);
       f.m.scale.y = lake ? 0.55 : 1;
       f.m.material.opacity = (lake ? f.o * 0.4 : f.o) * (0.55 + 0.45 * Math.sin(tSim * 0.7 + f.ph)) * (0.35 + 0.65 * dayF);
+    }
+    for(const g of glints){
+      const fl = 0.55 + 0.45 * Math.sin(tSim * 1.15 + g.ph);
+      g.m.material.color.set(0xfff0c8).lerp(cGlintNight, nightFNow);
+      g.m.material.opacity = (dayF * 0.20 + nightFNow * 0.09) * fl * (1 - wx.dim * 0.6) * (1 - wx.snow * 0.8);
     }
   }
   /* town-hall flag: ragged flutter, stronger in the wind */
@@ -57532,6 +57570,7 @@ function animate(){
 }
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
+window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
 
 /* ============================================================
    AMBIENT AUDIO — procedural WebAudio (zero assets)
