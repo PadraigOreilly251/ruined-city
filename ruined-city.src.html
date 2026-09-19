@@ -104,6 +104,8 @@ const CAM_PRESETS = {
   church: { p: [-48, 50, 112],  t: [-58, 16, 44] },
   forest: { p: [105, 30, 70],   t: [260, 4, -60] },
   horizon:{ p: [60, 3, 40],    t: [340, 10, 40] },
+  anchorA:{ p: [-40, 30, -10],  t: [60, 20, 60] },
+  anchorB:{ p: [30, 38, -74],   t: [-20, 10, -20] },
 };
 const camP = CAM_PRESETS[HASH.get('cam')] || (SNAP ? CAM_PRESETS.hero : CAM_PRESETS.hero);
 controls.target.set(camP.t[0], camP.t[1], camP.t[2]);
@@ -162,6 +164,8 @@ function columns(cells, material, noShadow){
    City grid ....... |x|<96, |z|<96. Flat. Blocks every 40m; asphalt roads
                      at x,z ∈ {0,±40,±80} with worn lane dashes.
    Clock tower ..... (24,−24), cleared plaza radius 14.
+   Anchor towers ... (60, 60) 14-storey near-intact; (−20,−20) half-collapsed;
+                     (20, 60) open roof + stair core. Reserved lots.
    Ruined city ..... 3–9 storey concrete slabs, stepped + overgrown roofs,
                      denser toward the centre; scattered rubble.
    River ........... meanders through the east meadow, centreline
@@ -558,6 +562,9 @@ const CLEAR_ZONES = [
   { x: 74,  z: -6,  r: 15 },   /* gas station, east avenue */
   { x: 44,  z: -30, r: 17 },   /* town hall, civic core */
   { x: -58, z: -18, r: 20 },   /* school + playground */
+  { x: 60,  z: 60,  r: 15 },   /* anchor tower A (tall) */
+  { x: -20, z: -20, r: 15 },   /* anchor tower B (half-collapsed) */
+  { x: 20,  z: 60,  r: 15 },   /* anchor tower C (open roof) */
 ];
 const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
 
@@ -598,6 +605,161 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   ruin(52, 8, 10, 12, 8, 502);  BLOCKS.push({ x: 52, z: 8, w: 10, d: 12 });
 }
 
+/* ============================================================
+   ANCHOR TOWERS — three tall silhouettes that break the flat 3–9 storey
+   skyline (each sits on a reserved lot from CLEAR_ZONES above):
+   A (60, 60)  — 14 storeys near-intact, chipped corner, leaning antenna
+   B (-20,-20) — 11 storeys sheared to a stair-step, tree on the cut floor
+   C (20, 60)  — 9 storeys + stair core, hole in the roof, tree through it
+   ============================================================ */
+{
+  const FH = 3.1;
+  const dirt = new THREE.Color(0x87816f);
+
+  /* ---- A: "The Anchor" — near-intact, tallest in the city ---- */
+  {
+    const X = 60, Z = 60, gY = groundY(X, Z);
+    const cells = [];
+    const BF = 11, TF = 3;                       /* base storeys / top storeys */
+    cells.push({ x: X, z: Z, y: gY, sy: BF * FH, sx: 11, sz: 11, color: concColor(901, 0.18) });
+    cells.push({ x: X + 0.8, z: Z - 0.6, y: gY + BF * FH, sy: TF * FH, sx: 8, sz: 8, color: concColor(902, 0.2) });
+    /* chipped corner: dark inset on the top face */
+    cells.push({ x: X + 3.4, z: Z - 3.2, y: gY + (BF + TF) * FH + 0.08, sy: 0.14, sx: 3.1, sz: 3.1, color: 0x2e3134 });
+    /* parapet + tilted cap slab */
+    cells.push({ x: X + 0.8, z: Z - 0.6, y: gY + (BF + TF) * FH, sy: 0.35, sx: 8.1, sz: 8.1, color: concColor(903, 0.26) });
+    cells.push({ x: X - 0.8, z: Z + 0.6, y: gY + (BF + TF) * FH + 0.5, sy: 0.3, sx: 4.4, sz: 3.6,
+      ry: 0.4, rz: 0.07, color: concColor(904, 0.24).lerp(dirt, 0.4) });
+    /* antenna, leaning */
+    cells.push({ x: X + 2.6, z: Z + 1.6, y: gY + (BF + TF) * FH + 0.35, sy: 4.6, sx: 0.16, sz: 0.16,
+      rz: 0.1, rx: 0.06, color: 0x55504a });
+    /* rebar at the chipped corner */
+    for(let i = 0; i < 4; i++)
+      cells.push({ x: X + 3.6 - hash(i, 910) * 2.6, z: Z - 3.2 + hash(i, 911) * 2.6,
+        y: gY + (BF + TF) * FH, sy: 0.4 + hash(i, 912) * 0.5, sx: 0.06, sz: 0.06,
+        rz: (hash(i, 913) - 0.5) * 0.7, color: 0x4a4238 });
+    /* moss streaks */
+    for(let i = 0; i < 3; i++)
+      cells.push({ x: X + (hash(i, 914) - 0.5) * 10, z: Z - 5.54, y: gY + 1 + hash(i, 915) * 18,
+        sy: 1 + hash(i, 916) * 1.6, sx: 0.5 + hash(i, 917) * 0.8, sz: 0.09, color: MOSS_G[i % 4] });
+    /* windows: 4 facades on the base + 2 on the top block */
+    facadeWindows(X, Z - 5.5, 11, gY, BF, 920, 0, -0.05);
+    facadeWindows(X, Z + 5.5, 11, gY, BF, 921, 0, 0.05);
+    facadeWindows(X - 5.5, Z, 11, gY, BF, 922, Math.PI / 2, -0.05);
+    facadeWindows(X + 5.5, Z, 11, gY, BF, 923, Math.PI / 2, 0.05);
+    facadeWindows(X + 0.8, Z - 4.6, 8, gY + BF * FH, TF, 924, 0, -0.05);
+    facadeWindows(X + 0.8, Z + 3.4, 8, gY + BF * FH, TF, 925, 0, 0.05);
+    /* snow cap + base rubble */
+    snowCells.push({ x: X + 0.8, z: Z - 0.6, y: gY + (BF + TF) * FH + 0.42, sy: 0.14, sx: 7.8, sz: 7.8 });
+    for(let i = 0; i < 10; i++){
+      const a = (i / 10) * Math.PI * 2 + hash(i, 918), r = 6.5 + hash(i, 919) * 1.6, s = 0.3 + hash(i, 926) * 0.5;
+      rubbleCells.push({ x: X + Math.cos(a) * r, z: Z + Math.sin(a) * r, y: groundY(X + Math.cos(a)*r, Z + Math.sin(a)*r) - 0.02,
+        sy: s * 0.6, sx: s, sz: s * 0.8, ry: hash(i, 927) * 3, color: concColor(928 + i, 0.16) });
+    }
+    columns(cells, lamber(0xffffff));
+    BLOCKS.push({ x: X, z: Z, w: 13, d: 13 });
+  }
+
+  /* ---- B: half-collapsed — 11 storeys sheared to a stair-step ---- */
+  {
+    const X = -20, Z = -20, gY = groundY(X, Z);
+    const cells = [];
+    const F1 = 7;                              /* intact storeys */
+    cells.push({ x: X, z: Z, y: gY, sy: F1 * FH, sx: 12, sz: 12, color: concColor(931, 0.18) });
+    /* surviving fragments of storeys 8-11, stepped to the east */
+    cells.push({ x: X + 3, z: Z, y: gY + F1 * FH, sy: 2 * FH, sx: 6, sz: 12, color: concColor(932, 0.2) });
+    cells.push({ x: X + 3.75, z: Z + 2, y: gY + (F1 + 2) * FH, sy: FH, sx: 4.5, sz: 7, color: concColor(933, 0.22) });
+    cells.push({ x: X + 3.9, z: Z + 2.2, y: gY + (F1 + 3) * FH + 0.1, sy: 0.32, sx: 4.6, sz: 4.2,
+      rz: 0.14, ry: 0.1, color: concColor(934, 0.24).lerp(dirt, 0.35) });   /* last slab, tilted */
+    /* cut floor: dark shadow across the sheared-off half */
+    cells.push({ x: X - 3, z: Z, y: gY + F1 * FH + 0.08, sy: 0.14, sx: 5.8, sz: 11.8, color: 0x2e3134 });
+    /* slab fallen against the shear face */
+    cells.push({ x: X + 1.5, z: Z - 3.2, y: gY + F1 * FH, sy: 3.8, sx: 0.3, sz: 1.9,
+      rz: 0.42, ry: 0.05, color: concColor(935, 0.22).lerp(dirt, 0.3) });
+    /* rebar along the shear line + on the stub */
+    for(let i = 0; i < 6; i++)
+      cells.push({ x: X - 0.2 + hash(i, 940) * 0.5, z: Z - 5 + i * 2 + hash(i, 941) * 0.8,
+        y: gY + F1 * FH, sy: 0.4 + hash(i, 942) * 0.55, sx: 0.06, sz: 0.06,
+        rz: (hash(i, 943) - 0.5) * 0.8, color: 0x4a4238 });
+    for(let i = 0; i < 2; i++)
+      cells.push({ x: X + 3.75 + (hash(i, 944) - 0.5) * 3, z: Z + 2 + (hash(i, 945) - 0.5) * 4,
+        y: gY + (F1 + 3) * FH + 0.12, sy: 0.35 + hash(i, 946) * 0.4, sx: 0.06, sz: 0.06,
+        rz: (hash(i, 947) - 0.5) * 0.7, color: 0x4a4238 });
+    /* moss on the shear face + ivy climbing the facade */
+    cells.push({ x: X + 0.07, z: Z + 3, y: gY + F1 * FH + 0.3, sy: 1.8, sx: 0.1, sz: 4, color: MOSS_G[1] });
+    cells.push({ x: X + 0.06, z: Z - 2.5, y: gY + 2, sy: F1 * FH * 0.55, sx: 0.08, sz: 3.5, color: IVY_G[2] });
+    /* windows: 7 rows all around + 2 rows on the fragment */
+    facadeWindows(X, Z - 6, 12, gY, F1, 960, 0, -0.05);
+    facadeWindows(X, Z + 6, 12, gY, F1, 961, 0, 0.05);
+    facadeWindows(X - 6, Z, 12, gY, F1, 962, Math.PI / 2, -0.05);
+    facadeWindows(X + 6, Z, 12, gY, F1, 963, Math.PI / 2, 0.05);
+    facadeWindows(X + 3, Z - 6, 6, gY + F1 * FH, 2, 964, 0, -0.05);
+    /* tree growing on the cut floor */
+    tree(X - 3.6, Z + 2.5, 5.5, 1.4, 951, gY + F1 * FH + 0.14);
+    /* snow caps on the surviving roofs */
+    snowCells.push({ x: X + 3, z: Z, y: gY + (F1 + 2) * FH + 0.36, sy: 0.13, sx: 5.8, sz: 11.6 });
+    snowCells.push({ x: X + 3.75, z: Z + 2, y: gY + (F1 + 3) * FH + 0.34, sy: 0.12, sx: 4.3, sz: 6.6 });
+    /* rubble field along the shear */
+    for(let i = 0; i < 16; i++){
+      const t = i / 15, s = 0.35 + hash(i, 970) * 0.75;
+      const rx = X - 5 + t * 10 + (hash(i, 971) - 0.5) * 2, rz = Z - 6 + hash(i, 972) * 12;
+      rubbleCells.push({ x: rx, z: rz, y: groundY(rx, rz) - 0.02, sy: s * 0.55, sx: s, sz: s * 0.85,
+        ry: hash(i, 973) * 3, color: concColor(974 + i, 0.16) });
+    }
+    columns(cells, lamber(0xffffff));
+    BLOCKS.push({ x: X, z: Z, w: 14, d: 14 });
+  }
+
+  /* ---- C: open roof — 9 storeys + stair core, hole in the roof, tree through it ---- */
+  {
+    const X = 20, Z = 60, gY = groundY(X, Z);
+    const cells = [];
+    const F = 9;
+    cells.push({ x: X, z: Z, y: gY, sy: F * FH, sx: 10, sz: 10, color: concColor(981, 0.18) });
+    const ry = gY + F * FH;
+    /* roof frame: four slabs, 4x4 hole in the middle */
+    cells.push({ x: X, z: Z - 3.5, y: ry, sy: 0.3, sx: 10, sz: 3, color: concColor(982, 0.24) });
+    cells.push({ x: X, z: Z + 3.5, y: ry, sy: 0.3, sx: 10, sz: 3, color: concColor(983, 0.24) });
+    cells.push({ x: X - 3.5, z: Z, y: ry, sy: 0.3, sx: 3, sz: 4, color: concColor(984, 0.24) });
+    cells.push({ x: X + 3.5, z: Z, y: ry, sy: 0.3, sx: 3, sz: 4, color: concColor(985, 0.24) });
+    /* dark void under the hole */
+    cells.push({ x: X, z: Z, y: ry - 0.15, sy: 0.3, sx: 3.8, sz: 3.8, color: 0x2e3134 });
+    /* stair core on the SW frame + tilted cap */
+    cells.push({ x: X - 3.5, z: Z - 3.5, y: ry + 0.3, sy: 3.2, sx: 4.2, sz: 4.2, color: concColor(986, 0.2) });
+    cells.push({ x: X - 3.3, z: Z - 3.2, y: ry + 3.5, sy: 0.3, sx: 4.6, sz: 4.6, rz: 0.06, color: concColor(987, 0.26) });
+    /* parapet on the frame edge */
+    cells.push({ x: X, z: Z - 4.9, y: ry + 0.3, sy: 0.3, sx: 10, sz: 0.24, color: concColor(988, 0.28) });
+    cells.push({ x: X, z: Z + 4.9, y: ry + 0.3, sy: 0.3, sx: 10, sz: 0.24, color: concColor(989, 0.28) });
+    cells.push({ x: X - 4.9, z: Z, y: ry + 0.3, sy: 0.3, sx: 0.24, sz: 10, color: concColor(990, 0.28) });
+    /* rebar around the hole */
+    for(let i = 0; i < 4; i++)
+      cells.push({ x: X + (hash(i, 991) - 0.5) * 3.6, z: Z + (hash(i, 992) - 0.5) * 3.6,
+        y: ry - 0.5, sy: 0.35 + hash(i, 993) * 0.4, sx: 0.06, sz: 0.06,
+        rz: (hash(i, 994) - 0.5) * 0.9, color: 0x4a4238 });
+    /* moss streaks */
+    for(let i = 0; i < 3; i++)
+      cells.push({ x: X + (hash(i, 995) - 0.5) * 9, z: Z + 5.04, y: gY + 1 + hash(i, 996) * 16,
+        sy: 0.9 + hash(i, 997) * 1.4, sx: 0.45 + hash(i, 998) * 0.7, sz: 0.09, color: MOSS_G[(i + 1) % 4] });
+    /* windows all around */
+    facadeWindows(X, Z - 5, 10, gY, F, 999, 0, -0.05);
+    facadeWindows(X, Z + 5, 10, gY, F, 1009, 0, 0.05);
+    facadeWindows(X - 5, Z, 10, gY, F, 1010, Math.PI / 2, -0.05);
+    facadeWindows(X + 5, Z, 10, gY, F, 1011, Math.PI / 2, 0.05);
+    /* snow on the roof frame */
+    snowCells.push({ x: X, z: Z - 3.5, y: ry + 0.4, sy: 0.12, sx: 9.7, sz: 2.8 });
+    snowCells.push({ x: X, z: Z + 3.5, y: ry + 0.4, sy: 0.12, sx: 9.7, sz: 2.8 });
+    /* tree through the hole */
+    tree(X + 0.3, Z - 0.4, 5.5, 1.35, 1021, ry + 0.34);
+    /* base rubble */
+    for(let i = 0; i < 9; i++){
+      const a = (i / 9) * Math.PI * 2 + hash(i, 1022), r = 6 + hash(i, 1023) * 1.5, s = 0.3 + hash(i, 1024) * 0.45;
+      rubbleCells.push({ x: X + Math.cos(a) * r, z: Z + Math.sin(a) * r, y: groundY(X + Math.cos(a)*r, Z + Math.sin(a)*r) - 0.02,
+        sy: s * 0.6, sx: s, sz: s * 0.8, ry: hash(i, 1025) * 3, color: concColor(1026 + i, 0.16) });
+    }
+    columns(cells, lamber(0xffffff));
+    BLOCKS.push({ x: X, z: Z, w: 12, d: 12 });
+  }
+}
+
 /* ---------- worn road markings ---------- */
 {
   const dGeo = new THREE.PlaneGeometry(0.4, 2.4);
@@ -627,7 +789,7 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
 /* ---------- window quads (instanced planes) ---------- */
 {
   const wGeo = new THREE.PlaneGeometry(0.95, 1.4);
-  const m = new THREE.InstancedMesh(wGeo, new THREE.MeshLambertMaterial({ color: 0x2f3338 }), winQuads.length);
+  const m = new THREE.InstancedMesh(wGeo, new THREE.MeshLambertMaterial({ color: 0x2f3338, side: THREE.DoubleSide }), winQuads.length);
   const mat = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(1,1,1), q = new THREE.Quaternion(), e = new THREE.Euler();
   const lit = [];
   winQuads.forEach((w, i) => {
@@ -642,7 +804,7 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   m.instanceColor.needsUpdate = true;
   scene.add(m);
   /* lit windows that glow after dark */
-  const lm = new THREE.InstancedMesh(wGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }), Math.max(1, lit.length));
+  const lm = new THREE.InstancedMesh(wGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }), Math.max(1, lit.length));
   lit.forEach((w, i) => {
     p.set(w.x + w.ox * 0.6, w.y, w.z + w.oz * 0.6);
     e.set(0, w.ry, 0); q.setFromEuler(e);

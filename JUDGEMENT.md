@@ -176,3 +176,18 @@ Also exposed: `window.__RC_CAM__` (camera + OrbitControls) so the headless harne
 aim the camera at any landmark (`rc5.mjs <url> <out> <wait> "<script>"`).
 
 New presets: `church`, `forest`, `horizon`.
+
+## Round 3 — anchor towers (item 7) + window-side fix
+
+| # | Item | Done | Evidence (headless capture) |
+|---|------|------|------------------------------|
+| 7 | Three anchor towers breaking the flat 3–9-storey skyline | ✓ | `t_aerial.png` — all three read from the aerial; `t_anchorA2.png` — 14-storey "The Anchor" (60,60): stepped 11+3 storeys, chipped corner, leaning antenna, full window grid; `t_anchorB4.png` — (-20,-20): 11 storeys sheared to a stair-step (7 full + 6×12 + 4.5×7 fragments, tilted last slab, dark cut-floor shadow, rebar along the shear, slab fallen against the shear face, tree on the cut floor, rubble field); `t_anchorA2.png` right — (20,60): 9 storeys + stair core, 4×4 hole in the roof with tree through it |
+| — | **Found en route:** window quads were FrontSide-only, so every south & west facade in the city rendered blank | ✓ | both window materials (dark + lit) now `DoubleSide`; `t_hero2.png` — south/west faces carry window grids, no z-fighting |
+
+Notes:
+- Towers sit on reserved lots (CLEAR_ZONES r15 at the block centres (60,60), (−20,−20), (20,60)) so the
+  procedural `ruin()` loop and lot trees stay off them; `BLOCKS` entries keep vegetation out of the footprints.
+- Heights: A ≈ 43 m + 4.6 m antenna, B ≈ 31 m, C ≈ 28 m + 3.2 m core vs. the usual 9–28 m — clear vertical
+  hierarchy; A's ~13% lit-window share glows at night (`t_night.png`).
+- Snow caps on all surviving roofs follow the existing `snowCells` system.
+- New presets: `anchorA`, `anchorB`.
