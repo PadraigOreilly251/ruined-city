@@ -57067,7 +57067,7 @@ function updateShootingStars(dt){
       }
     }
   };
-  addTrail([[-118, 16], [-102, 22], [-92, 12], [-80, 18], [-68, 10], [-56, 14], [-46, 8]], 0.95, 0.24, 0.17, 0.3, 11000);   /* deer, meadow into town */
+  addTrail([[-124, 10], [-114, 18], [-104, 8], [-96, 20], [-89, 14]], 0.95, 0.24, 0.17, 0.3, 11000);   /* T3: deer stay in the meadow (their actual bounds) */
   addTrail([[-44, 30], [-20, 22], [4, 14], [28, 8], [52, 4], [70, 2]], 0.55, 0.11, 0.1, 0.17, 22000);   /* fox, near the avenue */
   const fpMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1 });
   const fp = columns(cells, fpMat, true);
@@ -57085,6 +57085,10 @@ function setAnimalScale(a, dt, target){
   if (a.g.scale.x < 0.01) a.g.visible = false; else a.g.visible = true;
 }
 const tmpV = new THREE.Vector3();
+
+/* ---------- player awareness (the wanderer) ---------- */
+function playerDist(x, z){ return Math.hypot(camera.position.x - x, camera.position.z - z); }
+function faceYaw(x, z){ return Math.atan2(camera.position.x - x, camera.position.z - z); }
 
 /* ---------- deer herd (west meadow) ---------- */
 const deerList = [];
@@ -57106,6 +57110,11 @@ function makeDeer(x, z, scale, seed, graze){
   skull.position.set(0, 0.02*scale, 0.1*scale); skull.castShadow = true; head.add(skull);
   const snout = new THREE.Mesh(B(0.09*scale, 0.09*scale, 0.14*scale), FUR_D);
   snout.position.set(0, -0.03*scale, 0.26*scale); head.add(snout);
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x14100a, emissive: 0xffe2b8, emissiveIntensity: 0 });
+  for(const s of [-1, 1]){   /* T6: night eye-shine */
+    const eye = new THREE.Mesh(B(0.032*scale, 0.032*scale, 0.02*scale), eyeM);
+    eye.position.set(s*0.055*scale, 0.045*scale, 0.245*scale); head.add(eye);
+  }
   if (scale > 0.8){
     for(const s of [-1, 1]){
       const an = new THREE.Mesh(B(0.04*scale, 0.34*scale, 0.04*scale), FUR_D);
@@ -57116,7 +57125,7 @@ function makeDeer(x, z, scale, seed, graze){
   tail.position.set(0, 0.78*scale, -0.46*scale); g.add(tail);
   g.position.set(x, groundH(x, z), z);
   scene.add(g);
-  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 0, target: null };
+  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 0, target: null, eyeM };
   a.target = a;   /* herd: fawn follows first deer */
   deerList.push(a);
   DAY_ANIMALS.push(a);
@@ -57140,27 +57149,74 @@ const herd = [];
   }
 }
 function updateDeer(dt, dayF){
+  const raining = wx.rain > 0.5, winter = season === 3, autumn = season === 2;
+  /* herd centroid (adults) — cohesion */
+  let cx = 0, cz = 0, n = 0;
+  for(const a of deerList) if (a.target === a){ cx += a.g.position.x; cz += a.g.position.z; n++; }
+  if (n){ cx /= n; cz /= n; }
   for(let i = deerList.length - 1; i >= 0; i--){
     const a = deerList[i];
     a.t -= dt;
-    if (a.t <= 0){
+    const pd = playerDist(a.g.position.x, a.g.position.z);
+    const adult = a.target === a;
+    /* T1: player startle — the herd alerts together: any adult seen within 14u
+       alerts every adult within 30u of it */
+    if (a.state === 'graze' || a.state === 'stand' || a.state === 'walk'){
+      let seen = pd < 14;
+      if (!seen && adult){
+        for(const o of deerList){
+          if (o === a || o.target !== o) continue;
+          if (Math.hypot(o.g.position.x - a.g.position.x, o.g.position.z - a.g.position.z) < 30 && playerDist(o.g.position.x, o.g.position.z) < 14){ seen = true; break; }
+        }
+      }
+      if (seen){ a.state = 'alert'; a.t = 0.4; a.dir = faceYaw(a.g.position.x, a.g.position.z); }
+    }
+    if (a.state === 'alert' && a.t <= 0){
+      if (pd < 9){ a.state = 'flee'; a.t = 6 + Math.random() * 4; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; }   /* away from the player */
+      else { a.state = 'stand'; a.t = 3 + Math.random() * 3; }
+    }
+    if (a.state === 'flee'){
+      /* T1: panic — sprint in a straight line away from the player */
+      if (a.target !== a){   /* fawn: re-aim at the parent every frame */
+        const lead = a.target;
+        const dx = lead.g.position.x - a.g.position.x, dz = lead.g.position.z - a.g.position.z;
+        if (Math.hypot(dx, dz) > 1.2) a.dir = Math.atan2(dx, dz);
+      }
+      a.g.position.x += Math.sin(a.dir) * 4.5 * dt;
+      a.g.position.z += Math.cos(a.dir) * 4.5 * dt;
+      a.g.rotation.y = a.dir;
+      const swing = Math.sin(tSim * 14 + a.phase) * 0.5;
+      a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+      if (a.t <= 0 || pd > 25 || a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 3 + Math.random() * 3; }
+    }
+    if (a.t <= 0 && (a.state === 'graze' || a.state === 'stand')){
       const r = Math.random();
-      if (a.state === 'graze' && r < 0.7){ a.state = 'stand'; a.t = 2 + Math.random() * 5; }
-      else if (a.state === 'stand' && r < 0.5){ a.state = 'graze'; a.t = 3 + Math.random() * 6; }
-      else { a.state = 'walk'; a.t = 6 + Math.random() * 10; a.dir = Math.random() * 6.28; a.speed = 1.0; }
+      if (raining){ a.state = 'stand'; a.t = 2 + Math.random() * 4; }   /* T5: rain — ears up, no grazing */
+      else if (a.state === 'graze'){
+        if (r < (winter ? 0.85 : 0.7)){ a.state = 'stand'; a.t = 2 + Math.random() * 5; }   /* T5: winter — graze less */
+        else a.t = 3 + Math.random() * 6;
+      } else {
+        if (r < (autumn ? 0.85 : 0.5)){   /* T5: autumn — restless, walks more */
+          a.state = 'walk'; a.t = 6 + Math.random() * 10; a.speed = 1.0;
+          if (adult && Math.random() < 0.5) a.dir = Math.atan2(cx - a.g.position.x, cz - a.g.position.z) + (Math.random() - 0.5) * 0.9;   /* T1: cohesion */
+          else a.dir = Math.random() * 6.28;
+        } else { a.state = 'graze'; a.t = 3 + Math.random() * 6; }
+      }
     }
     let headT;
-    if (a.state === 'graze') headT = 1.15 + Math.sin(tSim * 1.4 + a.phase) * 0.1;
+    if (a.state === 'flee') headT = 0.02;
+    else if (a.state === 'alert') headT = 0.05;      /* T1: head up, watching the player */
+    else if (a.state === 'graze') headT = 1.15 + Math.sin(tSim * 1.4 + a.phase) * 0.1;
     else if (a.state === 'stand') headT = 0.15 + Math.sin(tSim * 0.4 + a.phase) * 0.08;
     else headT = 0.45;
     a.head.rotation.x += (headT - a.head.rotation.x) * (1 - Math.exp(-dt * 2.5));
     if (a.state === 'walk'){
       const lead = a.target === a ? a : a.target;
       if (a.target !== a){
-        /* fawn follows */
+        /* fawn follows — tighter when the parent is fleeing */
         const dx = lead.g.position.x - a.g.position.x, dz = lead.g.position.z - a.g.position.z;
         const dist = Math.hypot(dx, dz);
-        if (dist > 3){ a.dir = Math.atan2(dx, dz); }
+        if (dist > (lead.state === 'flee' ? 1.2 : 3)) a.dir = Math.atan2(dx, dz);
       }
       a.g.position.x += Math.sin(a.dir) * a.speed * dt;
       a.g.position.z += Math.cos(a.dir) * a.speed * dt;
@@ -57169,10 +57225,11 @@ function updateDeer(dt, dayF){
       a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
       /* keep in the meadow */
       if (a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 2; }
-    } else a.legs.forEach(l => { l.rotation.x *= 0.9; });
-    /* hide at night */
-    const vis = dayF > 0.35 ? 1 : 0;
-    setAnimalScale(a, dt, vis);
+    } else if (a.state !== 'flee') a.legs.forEach(l => { l.rotation.x *= 0.9; });
+    /* hide at night; T5: winter deer run thin */
+    setAnimalScale(a, dt, (dayF > 0.35 ? 1 : 0) * (winter ? 0.95 : 1));
+    /* T6: eye-shine in the dim, when the wanderer is close */
+    a.eyeM.emissiveIntensity = Math.max(0, 0.65 - dayF) * 1.8 * Math.max(0, 1 - pd / 15);
   }
 }
 
@@ -57194,15 +57251,21 @@ function makeFox(){
     const ear = new THREE.Mesh(B(0.07, 0.16, 0.05), F_D);
     ear.position.set(s * 0.09, 0.16, 0); ear.rotation.z = s * 0.15; head.add(ear);
   }
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x1a1008, emissive: 0xffcf8a, emissiveIntensity: 0 });   /* T6 */
+  for(const s of [-1, 1]){
+    const eye = new THREE.Mesh(B(0.035, 0.035, 0.02), eyeM);
+    eye.position.set(s * 0.07, 0.03, 0.19); head.add(eye);
+  }
   g.add(head);
   const tail = new THREE.Mesh(B(0.12, 0.12, 0.5), F_D);
   tail.position.set(0, 0.58, -0.6); tail.rotation.x = 0.25; g.add(tail);
   const tip = new THREE.Mesh(B(0.11, 0.11, 0.16), CREAM); tip.position.set(0, 0.58, -0.82); g.add(tip);
   g.position.set(0, 0, -70);
   scene.add(g);
-  const a = { g, head, tail, legs, phase: Math.random() * 6.28, state: 'den', t: 2 + Math.random() * 4, dir: 0, speed: 3.4,
+  const a = { g, head, tail, legs, eyeM, phase: Math.random() * 6.28, state: 'den', t: 2 + Math.random() * 4, dir: 0, speed: 3.4,
     waypoints: [[0, -70], [12, -40], [12, -12], [-20, -12], [-20, 30], [14, 30], [14, 60], [40, 60], [40, 20], [-52, 44], [-30, -66], [0, -70]] };
   a.wi = 0;
+  a.j = null;   /* T2: per-outing jittered waypoints */
   foxes.push(a);
   NIGHT_ANIMALS.push(a);
   return a;
@@ -57220,35 +57283,75 @@ const fox = makeFox();
   window._foxes = foxes;
 }
 function updateFox(dt, dayF){
+  const stormy = wx.rain > 0.6;   /* T5: storm — the fox stays at its den */
   for (const a of foxes){
-  const active = dayF < 0.55;
+  const active = dayF < 0.55 && !stormy;
   setAnimalScale(a, dt, active ? 1 : 0);
-  if (!active) return;
+  if (!active){ a.state = 'den'; a.t = 2; continue; }
   a.t -= dt;
-  const wp = a.waypoints[a.wi];
+  const pd = playerDist(a.g.position.x, a.g.position.z);
+  const wp = (a.j ? a.j : a.waypoints)[a.wi];
   const dx = wp[0] - a.g.position.x, dz = wp[1] - a.g.position.z;
   const dist = Math.hypot(dx, dz);
   if (a.state === 'den'){
-    if (a.t <= 0){ a.state = 'trot'; a.dir = Math.atan2(dx, dz); a.t = 40; }   /* 40s trot timeout */
+    if (a.t <= 0){
+      a.state = 'trot';
+      a.t = 40;
+      /* T2: fresh jitter each outing; occasionally skip the next waypoint */
+      a.j = a.waypoints.map(p => [p[0] + (Math.random() - 0.5) * 6, p[1] + (Math.random() - 0.5) * 6]);
+      if (Math.random() < 0.1) a.wi = (a.wi + 1) % a.j.length;
+      a.dir = Math.atan2(a.j[a.wi][0] - a.g.position.x, a.j[a.wi][1] - a.g.position.z);
+    }
     const tailWag = Math.sin(tSim * 3 + a.phase) * 0.1;
     a.tail.rotation.x = 0.25 + tailWag;
     a.head.rotation.y = Math.sin(tSim * 0.8 + a.phase) * 0.55;   /* alert head sweeps while resting */
-  } else {
-    if (dist < 2.5 || a.t <= 0){ a.wi = (a.wi + 1) % a.waypoints.length; a.state = 'den'; a.t = 1 + Math.random() * 3.5; return; }
-    a.dir = Math.atan2(dx, dz);
-    const step = tSim * 9;
-    /* bounding gait: two-footed hop */
-    const hop = Math.abs(Math.sin(step));
-    a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.09;
-    a.g.position.x += Math.sin(a.dir) * a.speed * dt;
-    a.g.position.z += Math.cos(a.dir) * a.speed * dt;
-    a.g.rotation.y = a.dir;
-    a.g.rotation.x = Math.sin(step) * 0.06;
-    const swing = Math.sin(step) * 0.7;
-    a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
-    a.tail.rotation.x = 0.2 + Math.sin(step * 0.5) * 0.2;
-    a.head.rotation.x = 0.1 + Math.sin(step * 2) * 0.04;
+  } else if (a.state === 'stare'){
+    /* T1: it has seen the wanderer — halt, head locked */
+    const ha = faceYaw(a.g.position.x, a.g.position.z);
+    a.g.rotation.y += (ha - a.g.rotation.y) * (1 - Math.exp(-dt * 5));
+    a.head.rotation.y = 0; a.head.rotation.x = 0.12;
+    a.tail.rotation.x = 0.2;
+    a.legs.forEach(l => { l.rotation.x *= 0.8; });
+    if (a.t <= 0){
+      a.state = 'trot';
+      if (pd < 8){   /* bolt: pick the farthest nearby waypoint, away from the player */
+        let best = 1, bd = -1;
+        for (let k = 1; k <= 4; k++){
+          const w = a.j[(a.wi + k) % a.j.length];
+          const d = Math.hypot(camera.position.x - w[0], camera.position.z - w[1]);
+          if (d > bd){ bd = d; best = k; }
+        }
+        a.wi = (a.wi + best) % a.j.length; a.t = 6;
+      }
+      else a.t = 40;
+      a.dir = Math.atan2(a.j[a.wi][0] - a.g.position.x, a.j[a.wi][1] - a.g.position.z);
+    }
+  } else {   /* trot */
+    if (pd < 18){ a.state = 'stare'; a.t = 1.5 + Math.random() * 2.5; }
+    else if (dist < 2.5 || a.t <= 0){
+      a.wi = (a.wi + 1) % a.waypoints.length;
+      a.state = 'den';
+      a.t = 1 + Math.random() * 3.5 + (Math.random() < 0.3 ? 5 : 0);   /* T2: occasional long dwell */
+      if (pd < 10) a.wi = (a.wi + 1) % a.waypoints.length;             /* T1: don't loop back through the player */
+    } else {
+      a.dir = Math.atan2(dx, dz);
+      const step = tSim * 9;
+      /* bounding gait: two-footed hop */
+      const hop = Math.abs(Math.sin(step));
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.09;
+      a.g.position.x += Math.sin(a.dir) * a.speed * dt;
+      a.g.position.z += Math.cos(a.dir) * a.speed * dt;
+      a.g.rotation.y = a.dir;
+      a.g.rotation.x = Math.sin(step) * 0.06;
+      const swing = Math.sin(step) * 0.7;
+      a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+      a.tail.rotation.x = 0.2 + Math.sin(step * 0.5) * 0.2;
+      a.head.rotation.x = 0.1 + Math.sin(step * 2) * 0.04;
+      a.head.rotation.y *= Math.exp(-dt * 3);   /* relax back from a stare */
+    }
   }
+  /* T6: eye-shine in the dark */
+  a.eyeM.emissiveIntensity = Math.max(0, 1 - dayF) * 1.4 * Math.max(0, 1 - pd / 18);
   }
 }
 
@@ -57284,6 +57387,8 @@ function updateSquirrels(dt, dayF){
   for(const a of [sq1, sq2]){
     setAnimalScale(a, dt, dayF > 0.3 ? 1 : 0);
     a.t -= dt;
+    /* T1: the wanderer near the tree — dash at the base */
+    if (playerDist(a.g.position.x, a.g.position.z) < 8){ a.state = 'dash'; a.t = 2.5; }
     if (a.t <= 0){
       const r = Math.random();
       a.state = r < 0.45 ? 'climb' : r < 0.75 ? 'sit' : 'dash';
@@ -57319,6 +57424,11 @@ function makeRabbit(x, z, seed){
   const body = new THREE.Mesh(B(0.3, 0.22, 0.44), F); body.position.y = 0.2; body.castShadow = true; g.add(body);
   const head = new THREE.Group(); head.position.set(0, 0.28, 0.24);
   const skull = new THREE.Mesh(B(0.14, 0.13, 0.14), F); head.add(skull);
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x120e0a, emissive: 0xffe0b0, emissiveIntensity: 0 });   /* T6 */
+  for(const s of [-1, 1]){
+    const eye = new THREE.Mesh(B(0.026, 0.026, 0.015), eyeM);
+    eye.position.set(s * 0.04, 0.02, 0.066); head.add(eye);
+  }
   const ears = [];
   for(const s of [-1, 1]){
     const ear = new THREE.Mesh(B(0.04, 0.22, 0.04), F_D);
@@ -57333,33 +57443,49 @@ function makeRabbit(x, z, seed){
   }
   g.position.set(x, groundH(x, z), z);
   scene.add(g);
-  const a = { g, head, ears, legs, seed, phase: hash(seed,1)*6.28, state: 'freeze', t: 2 + Math.random() * 4,
+  const a = { g, head, ears, legs, eyeM, seed, phase: hash(seed,1)*6.28, state: 'freeze', t: 2 + Math.random() * 4,
     dir: Math.random() * 6.28, x0: x, z0: z };
   DAY_ANIMALS.push(a);
   return a;
 }
-const rb1 = makeRabbit(-100, 40, 501);
-const rb2 = makeRabbit(-114, 2, 502);
+const rabbits = [ makeRabbit(-100, 40, 501), makeRabbit(-114, 2, 502) ];
 function updateRabbits(dt, dayF){
-  for(const a of [rb1, rb2]){
-    setAnimalScale(a, dt, dayF > 0.35 ? 1 : 0);
-    a.t -= dt;
-    if (a.t <= 0){
-      if (a.state === 'freeze'){ a.state = 'hop'; a.t = 1.2 + Math.random() * 1.2; a.dir = Math.random() * 6.28; }
-      else { a.state = 'freeze'; a.t = 3 + Math.random() * 6; }
-    }
-    if (a.state === 'hop'){
-      const hop = Math.abs(Math.sin(tSim * 12 + a.phase));
-      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.22;
-      a.g.position.x += Math.sin(a.dir) * 3.2 * dt;
-      a.g.position.z += Math.cos(a.dir) * 3.2 * dt;
-      a.g.rotation.y = a.dir;
-      a.legs.forEach((l, k) => { l.rotation.x = Math.sin(tSim * 12) * 0.6 * (k % 2 ? 1 : -1); });
-      if (Math.hypot(a.g.position.x - a.x0, a.g.position.z - a.z0) > 12) a.state = 'freeze', a.t = 3;
-    } else {
-      a.ears.forEach((e, k) => { e.rotation.z = 0.05 + Math.sin(tSim * 5 + a.phase + k) * 0.06; });
-      a.head.rotation.y = Math.sin(tSim * 0.5 + a.phase) * 0.3;
-    }
+  for(let ri = 0; ri < rabbits.length; ri++){
+  const a = rabbits[ri];
+  /* T5: winter — one rabbit keeps the meadow, the other stays hidden */
+  const seasonal = !(season === 3 && ri === 1);
+  const vis = (dayF > 0.35 && seasonal) ? 1 : 0;
+  setAnimalScale(a, dt, vis);
+  if (!vis){ a.eyeM.emissiveIntensity = 0; continue; }
+  const pd = playerDist(a.g.position.x, a.g.position.z);
+  a.t -= dt;
+  /* T1: the wanderer approaches — freeze with ears back, then bolt and move home */
+  if (a.state === 'hop' && pd < 10){ a.state = 'freeze'; a.t = 2.5; }
+  if (a.state === 'freeze' && pd < 5){ a.state = 'bolt'; a.t = 2.2; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; }
+  if (a.t <= 0){
+    if (a.state === 'freeze'){ a.state = 'hop'; a.t = 1.2 + Math.random() * 1.2; a.dir = Math.random() * 6.28; }
+    else if (a.state !== 'bolt'){ a.state = 'freeze'; a.t = 3 + Math.random() * 6; }
+  }
+  if (a.state === 'hop' || a.state === 'bolt'){
+    const sp = a.state === 'bolt' ? 5.8 : 3.2;
+    const hop = Math.abs(Math.sin(tSim * (a.state === 'bolt' ? 14 : 12) + a.phase));
+    a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.22;
+    a.g.position.x += Math.sin(a.dir) * sp * dt;
+    a.g.position.z += Math.cos(a.dir) * sp * dt;
+    a.g.rotation.y = a.dir;
+    a.legs.forEach((l, k) => { l.rotation.x = Math.sin(tSim * 12) * 0.6 * (k % 2 ? 1 : -1); });
+    if (a.state === 'bolt' && (a.t <= 0 || pd > 14)){ a.state = 'freeze'; a.t = 3; a.x0 = a.g.position.x; a.z0 = a.g.position.z; }   /* T1: moved house */
+    else if (Math.hypot(a.g.position.x - a.x0, a.g.position.z - a.z0) > 12) a.state = 'freeze', a.t = 3;
+  } else {
+    const spooked = pd < 10 ? 1 : 0;   /* T1: ears lay back while the wanderer is close */
+    a.ears.forEach((e, k) => {
+      e.rotation.z = 0.05 + Math.sin(tSim * 5 + a.phase + k) * 0.06 * (1 - spooked);
+      e.rotation.x = -0.5 * spooked;
+    });
+    a.head.rotation.y = Math.sin(tSim * 0.5 + a.phase) * 0.3 * (1 - spooked);
+  }
+  /* T6: eye-shine in the dim */
+  a.eyeM.emissiveIntensity = Math.max(0, 0.65 - dayF) * 1.6 * Math.max(0, 1 - pd / 12);
   }
 }
 
@@ -57394,12 +57520,16 @@ function makeCat(){
 const cat = makeCat();
 function updateCat(dt, dayF){
   const a = cat;
-  const active = dayF < 0.5;
+  const active = dayF < 0.5 && wx.rain < 0.6;   /* T5: storm — the cat is off the streets */
   setAnimalScale(a, dt, active ? 1 : 0);
   if (!active) return;
   const wp = a.waypoints[a.wi];
   const dx = wp[0] - a.g.position.x, dz = wp[1] - a.g.position.z;
   const dist = Math.hypot(dx, dz);
+  const pd = playerDist(a.g.position.x, a.g.position.z);
+  /* T1: a cat will not be cornered — jump its route when the wanderer closes in */
+  if ((a.jumpT || 0) > 0) a.jumpT -= dt;
+  if (pd < 12 && a.jumpT <= 0){ a.wi = (a.wi + (pd < 7 ? 3 : 2)) % a.waypoints.length; a.jumpT = 5; }
   if (dist < 2 || a.t <= 0){ a.wi = (a.wi + 1) % a.waypoints.length; a.t = 6 + Math.random() * 8; }
   a.dir = Math.atan2(dx, dz);
   a.g.position.x += Math.sin(a.dir) * 1.1 * dt;
@@ -57409,7 +57539,12 @@ function updateCat(dt, dayF){
   const swing = Math.sin(tSim * 5) * 0.35;
   a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
   a.tail.rotation.x = -0.4 + Math.sin(tSim * 1.6) * 0.25;
-  a.head.rotation.y = Math.sin(tSim * 0.7 + a.phase) * 0.3;
+  /* T1: head locked on the wanderer when close */
+  if (pd < 14){
+    let rel = faceYaw(a.g.position.x, a.g.position.z) - a.g.rotation.y;
+    rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    a.head.rotation.y += (rel - a.head.rotation.y) * (1 - Math.exp(-dt * 5));
+  } else a.head.rotation.y = Math.sin(tSim * 0.7 + a.phase) * 0.3;
 }
 
 /* ---------- birds: crows (loop + perch), hawk, starlings ---------- */
@@ -57425,7 +57560,8 @@ function makeBird(cx, cz, rx, rz, h, speed, ph, s, flapRate, col){
   const wr = new THREE.Mesh(wGeoR, mat); wr.castShadow = true; g.add(wr);
   const head = new THREE.Mesh(B(0.1*s, 0.09*s, 0.14*s), mat); head.position.set(0, 0.04*s, 0.28*s); g.add(head);
   scene.add(g);
-  const a = { g, wl, wr, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 3, flapRate, state: 'loop', t: 0 };
+  const a = { g, wl, wr, head, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 3, flapRate, state: 'loop', t: 0,
+    driftPh: ph + Math.random() * 3, driftSp: 0.035 + Math.random() * 0.035 };   /* T2: the loop drifts */
   birds.push(a);
   ALWAYS_ANIMALS.push(a);
   return a;
@@ -57442,15 +57578,54 @@ makeBird(-30, -20, 14, 18, 9, 0.58, 4.7, 0.55, 16, 0x2a2e34);
 /* the hawk: wide slow circle */
 const hawk = makeBird(0, 0, 70, 70, 44, 0.07, 0.4, 1.5, 2.2, 0x4a3e30);
 hawk.flapRate = 2.2;
+/* T3: one crow perches on the broken church spire tip; the perch swaps every 80–140 s */
+const perch = { bird: null, t: 0, transit: 0, from: null, pos: { x: -57.2, y: 26.9, z: 43.4 } };
 function updateBirds(dt, dayF){
+  perch.t -= dt;
+  if (perch.t <= 0){
+    const crows = birds.filter(b => b.flapRate === 9 && b !== perch.bird);
+    perch.bird = crows[(Math.random() * crows.length) | 0];
+    perch.from = { x: perch.bird.g.position.x, y: perch.bird.g.position.y, z: perch.bird.g.position.z };
+    perch.transit = 0;
+    perch.t = 80 + Math.random() * 60;
+  }
   for(const b of birds){
-    const isHawk = b.speed < 0.1;
-    /* hawks sleep at night */
-    setAnimalScale(b, dt, (isHawk && dayF < 0.35) ? 0 : 1);
+    const isHawk = b === hawk;   /* identity — the old speed<0.1 check caught the negative-speed crows too */
+    const isStarling = b.flapRate > 12;
+    /* T3: hawks sleep at night; starlings roost in the eaves after dusk */
+    const roosting = (isHawk && dayF < 0.35) || (isStarling && dayF < 0.4);
+    setAnimalScale(b, dt, roosting ? 0 : 1);
+    if (roosting) continue;
+    if (b === perch.bird){
+      /* T3: flying up to the spire, or perched on the broken tip */
+      if (perch.transit < 1){
+        perch.transit = Math.min(1, perch.transit + dt / 2.5);
+        const e = perch.transit * perch.transit * (3 - 2 * perch.transit);
+        b.ph += b.speed * dt;   /* keep the loop phase alive for the return */
+        b.g.position.set(
+          perch.from.x + (perch.pos.x - perch.from.x) * e,
+          perch.from.y + (perch.pos.y - perch.from.y) * e,
+          perch.from.z + (perch.pos.z - perch.from.z) * e
+        );
+        b.g.rotation.y = Math.atan2(perch.pos.x - perch.from.x, perch.pos.z - perch.from.z);
+        const flap = Math.sin(tSim * 10 + b.flapPh) * (1 - perch.transit);
+        b.wl.rotation.y = flap * 0.75; b.wr.rotation.y = -flap * 0.75;
+        b.g.rotation.z = 0;
+      } else {
+        b.g.position.set(perch.pos.x, perch.pos.y + Math.sin(tSim * 1.2 + b.flapPh) * 0.05, perch.pos.z);
+        b.g.rotation.y = 2.6;
+        b.wl.rotation.y = 0.12; b.wr.rotation.y = -0.12;
+        b.head.rotation.y = Math.sin(tSim * 0.5 + b.flapPh) * 1.2;   /* turning its head, surveying the ruin */
+        b.g.rotation.z = 0;
+      }
+      continue;
+    }
     b.ph += b.speed * dt;
-    const x = b.cx + Math.cos(b.ph) * b.rx;
-    const z = b.cz + Math.sin(b.ph) * b.rz;
-    const y = b.h + Math.sin(b.ph * 2.3 + b.flapPh) * (isHawk ? 4 : 1.4);
+    /* T2: slow per-bird drift — never the same circle twice */
+    const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
+    const x = b.cx + Math.cos(b.ph) * b.rx * dm;
+    const z = b.cz + Math.sin(b.ph) * b.rz * dm;
+    const y = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh)) + Math.sin(b.ph * 2.3 + b.flapPh) * (isHawk ? 4 : 1.4);
     b.g.position.set(x, y, z);
     b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
     const flap = Math.sin(tSim * b.flapRate + b.flapPh);
@@ -57579,7 +57754,7 @@ const pollinators = [];
 }
 function updatePollinators(dt, dayF){
   for(const p of pollinators){
-    setAnimalScale(p, dt, dayF > 0.4 ? 1 : 0);
+    setAnimalScale(p, dt, (dayF > 0.4 && season === 1) ? 1 : 0);   /* T3: summer only, like the fireflies */
     p.ph += p.speed * dt;
     const x = p.cx + Math.cos(p.ph * 1.3) * p.rx + Math.sin(p.ph * 3.7) * 0.4;
     const z = p.cz + Math.sin(p.ph) * p.rz + Math.cos(p.ph * 2.9) * 0.4;
@@ -57788,6 +57963,9 @@ function animate(){
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
 window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
+window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2];
+window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
+window._perch = perch;
 
 /* ============================================================
    AMBIENT AUDIO — procedural WebAudio (zero assets)

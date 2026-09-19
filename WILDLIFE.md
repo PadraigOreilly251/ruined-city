@@ -157,3 +157,31 @@ thud × 3) on bolt. Reuses the existing procedural-audio pattern.
 
 Each batch ends with: `node build-standalone.mjs`, zero console errors, CDP capture proof per item,
 JUDGEMENT-style resolution log appended here, commit, push.
+
+## Resolution log — Batch 1 (T1 + T2 + T3 + T5 + T6)
+
+Built, verified headless (Chrome CDP, `#time/#day/#wx/#cam` params), zero console errors on every run.
+
+| Item | Evidence |
+|---|---|
+| T1 deer | cam 8 u from deer0 → 3 flee, 4 alert (herd radius 30 u works), distant deer keeps grazing. Head rot: graze 1.06 vs alert/flee 0.08–0.13 (head up). `w_deer_flee4.png` |
+| T1 deer direction | first build fled *toward* the player (faceYaw sign). Fixed: flee dir = `faceYaw + π`. Re-verified: movement vector now opposite the cam (`w_deer_flee4.png`, t0 vs post) |
+| T1 fox | cam 10.6 u at dusk → state `stare`, stationary (pos unchanged over 3 s), head locked (headY 0), eye 0.58. `w_fox_stare.png` |
+| T1 fox bolt | now picks farthest of next-4 waypoints instead of `wi+2` (could run toward the player) |
+| T1 rabbit | cam 4.5 u → freeze → bolt; moved 9.4 u **away** (same faceYaw bug as deer, fixed with `+ π`). Ears flattened in `w_rab_bolt.png` |
+| T1 cat / squirrels | head-lock + route jump / dash wired; verified in code paths (cat hidden at 13 h by schedule) |
+| T2 fox loop | jitter + dwell + skip in `updateFox`; loop still terminates (wp advance on arrival) |
+| T3 starlings | `#time=23`: all 3 starlings `visible:false` (roost), hawk hidden, 4 crows airborne |
+| T3 isHawk bug | `b.speed < 0.1` caught the two **negative-speed crows** (−0.17/−0.27) → they vanished at night since forever. Fixed: `b === hawk`. `w_night2.png` |
+| T3 spire perch | `perch.transit` 0→1 (2.5 s ease), bird pos lands **exactly** on the broken shard (−57.2, 26.9, 43.4); perch swaps 80–140 s (observed bird 0 → 3 → 1 across runs). `w_spire6.png` — crow silhouette on the tip |
+| T5 winter | `#day=3`: rabbit[1] scale→0.01 hidden, all deer scale 0.95, pollinators hidden. `w_winter.png` (bare trees, dusted ground) |
+| T5 storm | `#wx=storm` 20 h: both foxes `den`, cat hidden. Deer graze→stand at timer expiry (gradual, intended). `w_storm.png` |
+| T5 pollinators | summer-only gate: all 5 hidden in spring (`w_base.png` run, `pollinators:[false×5]`) |
+| T6 eye-shine | state: `emissiveIntensity` 0.53–0.76 on fleeing deer at 19.45 h, 0 by day. Visually ~1–2 px at 1280 px — state is the right proof level; effect is a close-range human-viewer detail |
+| T7 audio | deferred to Batch 3 |
+
+Notes:
+
+- Headless sim runs < real time (dt clamp 0.05 + software GL); state dumps are authoritative, wall-clock waits are generous.
+- `DAY_ANIMALS/NIGHT_ANIMALS/ALWAYS_ANIMALS` arrays are legacy dead code (pushed, never read) — left as-is.
+- Firefly season gate was already correct (`dayF<0.35 && season===1`); probe initially misread `.visible` (gate is material opacity).
