@@ -185,3 +185,23 @@ Notes:
 - Headless sim runs < real time (dt clamp 0.05 + software GL); state dumps are authoritative, wall-clock waits are generous.
 - `DAY_ANIMALS/NIGHT_ANIMALS/ALWAYS_ANIMALS` arrays are legacy dead code (pushed, never read) — left as-is.
 - Firefly season gate was already correct (`dayF<0.35 && season===1`); probe initially misread `.visible` (gate is material opacity).
+
+## Resolution log — Batch 2 (T4)
+
+Built, verified headless (Chrome CDP, `#time=18.73` → sim lands in the dayF 0.35–0.55 dusk
+overlap window at pre-shot time), zero console errors on every run.
+
+| Item | Evidence |
+|---|---|
+| T4 trigger | natural fire: hunt.t forced 0, fox trotting 7.2 u from hopping rabbit → next frame `phase 1`, outcome `dash` picked by the 60/40 roll, fox `state 'hunt'`, rabbit `freeze`. Guards confirmed: trigger requires fox `trot` + rabbit `hop` + scale ≥ 0.5 + dist < 10 + dayF 0.35–0.55 + rain < 0.5 |
+| T4 stare | fox halts in place (pos fixed at (−98, 24) across the 1.2 s phase), body rotates onto the rabbit (yaw lerp), rabbit frozen with ears laid back. Both animals in frame at dusk — `h_stare2.png` |
+| T4 dash 60% | fox chases at 6.5 u/s re-aiming each frame; rabbit bolts at 10.4 u/s (1.8 × its 5.8 bolt) straight away from the fox. Mid-chase: fox (−102.1, 21.3), rabbit (−110.6, 15.8), gap 7.2 → 10.1 u and widening — the fox **just misses**, as designed. `h_dash.png` |
+| T4 peel 40% | fox yaw 0.85 ≈ target 0.98 (turn *away* from the rabbit, not toward), rabbit stays frozen ears-back the whole time. `h_peel.png` |
+| T4 release | after the sequence: `phase 0`, cooldown ≈ 199 (200 s city-wide), hunt refs nulled, fox back to `trot` resuming its jittered route, rabbit settles `freeze` at its **new home** (x0/z0 = final pos, moved 19 u SW), final gap 19 u — clean escape |
+| T4 ownership | `hunt.fox`/`hunt.rab` guards in `updateFox`/`updateRabbits` — the hunted pair is excluded from T1 (player stare/freeze) for the ~4 s commitment; eye-shine line still runs for the fox |
+
+Notes:
+
+- Headless dt runs ~0.25× wall clock (rAF + software GL): the 3.6 s sequence takes ~15 wall s; state dumps timed accordingly.
+- The dusk window is short in sim time (dayF 0.35–0.55 ≈ h 18.76–19.00 ≈ 14 sim min ≈ 3.5 wall min at 4-min days) — with a 200 s cooldown and 2 foxes × 2 rabbits the hunt stays a rare "the city is a wild place" moment, not a loop.
+- `window._hunt` exposed for CDP (consistent with `_deer`/`_perch` debug hooks).

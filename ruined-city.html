@@ -57290,6 +57290,10 @@ function updateFox(dt, dayF){
   if (!active){ a.state = 'den'; a.t = 2; continue; }
   a.t -= dt;
   const pd = playerDist(a.g.position.x, a.g.position.z);
+  if (a === hunt.fox && hunt.phase > 0){   /* T4: the hunt owns the fox */
+    a.eyeM.emissiveIntensity = Math.max(0, 1 - dayF) * 1.4 * Math.max(0, 1 - pd / 18);
+    continue;
+  }
   const wp = (a.j ? a.j : a.waypoints)[a.wi];
   const dx = wp[0] - a.g.position.x, dz = wp[1] - a.g.position.z;
   const dist = Math.hypot(dx, dz);
@@ -57457,6 +57461,7 @@ function updateRabbits(dt, dayF){
   const vis = (dayF > 0.35 && seasonal) ? 1 : 0;
   setAnimalScale(a, dt, vis);
   if (!vis){ a.eyeM.emissiveIntensity = 0; continue; }
+  if (a === hunt.rab && hunt.phase > 0) continue;   /* T4: the hunt owns the rabbit */
   const pd = playerDist(a.g.position.x, a.g.position.z);
   a.t -= dt;
   /* T1: the wanderer approaches — freeze with ears back, then bolt and move home */
@@ -57486,6 +57491,98 @@ function updateRabbits(dt, dayF){
   }
   /* T6: eye-shine in the dim */
   a.eyeM.emissiveIntensity = Math.max(0, 0.65 - dayF) * 1.6 * Math.max(0, 1 - pd / 12);
+  }
+}
+
+/* ---------- T4: the hunt — a scripted fox-and-rabbit encounter, ~200 s city-wide cooldown ---------- */
+const hunt = { phase: 0, t: 40, tPhase: 0, fox: null, rab: null, outcome: 0 };
+
+function updateHunt(dt, dayF){
+  if (hunt.phase > 0){
+    hunt.tPhase -= dt;
+    const f = hunt.fox, r = hunt.rab;
+    const fx = f.g.position.x, fz = f.g.position.z, rx = r.g.position.x, rz = r.g.position.z;
+    if (hunt.phase === 1){   /* the fox has found the rabbit: it halts, head on it */
+      const ta = Math.atan2(rx - fx, rz - fz);
+      f.g.rotation.y += (ta - f.g.rotation.y) * (1 - Math.exp(-dt * 6));
+      f.head.rotation.y = 0; f.head.rotation.x = 0.08;
+      f.legs.forEach(l => { l.rotation.x *= 0.8; });
+      f.tail.rotation.x = 0.15;
+      r.state = 'freeze'; r.t = hunt.tPhase;
+      r.ears.forEach(e => { e.rotation.x = -0.5; e.rotation.z = 0.05; });
+      if (hunt.tPhase <= 0){
+        hunt.phase = 2; hunt.tPhase = hunt.outcome === 'dash' ? 1.6 : 1.4;
+        if (hunt.outcome === 'dash'){
+          r.state = 'bolt'; r.t = 2.5;
+          r.dir = Math.atan2(rx - fx, rz - fz) + (Math.random() - 0.5) * 0.6;   /* straight away from the fox */
+        }
+      }
+    } else if (hunt.phase === 2){
+      if (hunt.outcome === 'dash'){
+        /* the fox gives chase — and just misses */
+        f.dir = Math.atan2(rx - fx, rz - fz);
+        f.g.rotation.y += (f.dir - f.g.rotation.y) * (1 - Math.exp(-dt * 10));
+        f.g.position.x += Math.sin(f.dir) * 6.5 * dt;
+        f.g.position.z += Math.cos(f.dir) * 6.5 * dt;
+        f.g.position.y = groundH(f.g.position.x, f.g.position.z) + Math.abs(Math.sin(tSim * 20)) * 0.12;
+        const swing = Math.sin(tSim * 22) * 0.9;
+        f.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+        f.g.rotation.x = Math.sin(tSim * 20) * 0.1;
+        f.head.rotation.x = 0.15;
+        f.tail.rotation.x = 0;
+        /* the rabbit bolts at 1.8× and makes good its escape */
+        r.g.position.x += Math.sin(r.dir) * 10.4 * dt;
+        r.g.position.z += Math.cos(r.dir) * 10.4 * dt;
+        r.g.position.y = groundH(r.g.position.x, r.g.position.z) + Math.abs(Math.sin(tSim * 20 + 1)) * 0.24;
+        r.g.rotation.y = r.dir;
+        r.legs.forEach((l, k) => { l.rotation.x = Math.sin(tSim * 20 + 1) * 0.6 * (k % 2 ? 1 : -1); });
+        r.ears.forEach(e => { e.rotation.x = -0.5; });
+        if (hunt.tPhase <= 0){ hunt.phase = 3; hunt.tPhase = 0.8; }
+      } else {
+        /* the fox hesitates, turns, and peels away */
+        const ta = Math.atan2(rx - fx, rz - fz) + Math.PI;
+        f.g.rotation.y += (ta - f.g.rotation.y) * (1 - Math.exp(-dt * 3));
+        f.head.rotation.x = 0.05;
+        f.tail.rotation.x = 0.25 + Math.sin(tSim * 3) * 0.1;
+        r.ears.forEach(e => { e.rotation.x = -0.5; e.rotation.z = 0.05; });
+        if (hunt.tPhase <= 0){
+          hunt.phase = 3; hunt.tPhase = 0.8;
+          r.state = 'hop'; r.t = 1.5; r.dir = Math.random() * 6.28;
+        }
+      }
+    } else {   /* phase 3 — release: the rabbit settles, the fox resumes its rounds */
+      if (hunt.outcome === 'dash'){
+        r.g.position.x += Math.sin(r.dir) * 6 * dt;
+        r.g.position.z += Math.cos(r.dir) * 6 * dt;
+        r.g.position.y = groundH(r.g.position.x, r.g.position.z) + Math.abs(Math.sin(tSim * 12)) * 0.18;
+        r.g.rotation.y = r.dir;
+      }
+      if (hunt.tPhase <= 0){
+        if (hunt.outcome === 'dash'){ r.state = 'freeze'; r.t = 3; r.x0 = r.g.position.x; r.z0 = r.g.position.z; }
+        f.state = 'trot'; f.t = 40; f.head.rotation.y = 0;
+        hunt.phase = 0; hunt.t = 200; hunt.fox = null; hunt.rab = null;
+      }
+    }
+    return;
+  }
+  /* cooldown */
+  hunt.t -= dt;
+  if (hunt.t > 0) return;
+  /* dusk overlap window, calm weather only */
+  if (dayF < 0.35 || dayF > 0.55 || wx.rain > 0.5) return;
+  for(const f of foxes){
+    if (f.state !== 'trot') continue;
+    for(const r of rabbits){
+      if (r.g.scale.x < 0.5 || r.state !== 'hop') continue;
+      const d = Math.hypot(r.g.position.x - f.g.position.x, r.g.position.z - f.g.position.z);
+      if (d < 10){
+        hunt.phase = 1; hunt.tPhase = 1.2;
+        hunt.fox = f; hunt.rab = r;
+        hunt.outcome = Math.random() < 0.6 ? 'dash' : 'peel';
+        f.state = 'hunt';
+        return;
+      }
+    }
   }
 }
 
@@ -57942,6 +58039,7 @@ function stepFrame(dt){
   updateFox(dt, dayF);
   updateSquirrels(dt, dayF);
   updateRabbits(dt, dayF);
+  updateHunt(dt, dayF);
   updateCat(dt, dayF);
   updateBirds(dt, dayF);
   updateBats(dt, dayF);
@@ -57963,7 +58061,7 @@ function animate(){
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
 window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
-window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2];
+window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2]; window._hunt = hunt;
 window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
 window._perch = perch;
 
