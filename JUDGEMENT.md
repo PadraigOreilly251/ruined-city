@@ -154,3 +154,25 @@ keeps the no-backdrop philosophy while hiding the cut.
 Top 4 items are the real wins; items 1–2 together would change how the two best shots (lake, tower) look.
 Nothing here is a rework — the scene's design (palette, ruined detail, weather depth, wildlife staging) holds
 up; the gaps are in *water motion*, *vertical hierarchy*, and *one too-small detail* (clock).
+
+---
+
+## Round 2 — resolution log (all items implemented)
+
+| # | Item | Done | Evidence (headless capture) |
+|---|------|------|------------------------------|
+| 1 | Water: ripples +20%, third swell (14 s), sun/moon glints | ✓ | `v_lake.png` — glint disc on the lake |
+| 2 | Clock face: big north-shaft dial, ticks, hands at 4:17 | ✓ | `v_face4.png` — reads as a real clock at street level |
+| 3 | Bush cap 3.4 → 1.7 wide + lumpy top box | ✓ | `v_meadow2.png` |
+| 4 | Golden hour held to 19.7, sun floor 0.78 | ✓ | `v_golden2.png` — amber key on city at 19:28 |
+| 5 | HUD night contrast (cream text + dark halo past 0.45 night) | ✓ | `v_night_hud.png` — title fully legible at 21:09 |
+| 6 | Forest silhouette mix: ~62% broadleaf / ~22% conifer / ~16% dead | ✓ | `v_forest.png` — 3-tier pines + bare leaning grey trunks distinct |
+| 7 | Spire shards: 4 chunks at the break + 3 slabs leaning the walls | ✓ | `v_spire3.png` / `v_spire4.png` — clean break, no z-fight |
+| 8 | Logs 0.34 → 0.5–0.72 diameter | ✓ | code |
+| 9 | Fog base 90/480 → 78/408 (−15%) | ✓ | `v_horizon.png` — horizon ridge reads through clear-day air |
+| 10 | Far-hill ring (28 peaks past the map edge, r 330–440) | ✓ | `v_horizon.png` — terrain cliff gone from the horizon |
+
+Also exposed: `window.__RC_CAM__` (camera + OrbitControls) so the headless harness can
+aim the camera at any landmark (`rc5.mjs <url> <out> <wait> "<script>"`).
+
+New presets: `church`, `forest`, `horizon`.

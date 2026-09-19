@@ -101,6 +101,9 @@ const CAM_PRESETS = {
   lake:   { p: [30, 26, 150],  t: [116, 0, 262] },
   tower:  { p: [56, 34, 16],   t: [24, 18, -24] },
   meadow: { p: [-98, 5, -16],  t: [-116, 3, 22] },
+  church: { p: [-48, 50, 112],  t: [-58, 16, 44] },
+  forest: { p: [105, 30, 70],   t: [260, 4, -60] },
+  horizon:{ p: [60, 3, 40],    t: [340, 10, 40] },
 };
 const camP = CAM_PRESETS[HASH.get('cam')] || (SNAP ? CAM_PRESETS.hero : CAM_PRESETS.hero);
 controls.target.set(camP.t[0], camP.t[1], camP.t[2]);
@@ -730,6 +733,15 @@ columns(rubbleCells, lamber(0xffffff));
     cells.push({ x: X - 6 + (hash(i, 76) - 0.5) * 4, z: Z + (hash(i, 77) - 0.5) * 4,
       y: 22 + i * 0.4, sy: 0.5 + hash(i, 78) * 0.7, sx: 0.06, sz: 0.06, rz: (hash(i,79) - 0.5) * 0.8, color: 0x4a4238 });
   }
+  /* broken shards: chunks caught in the spire break + slabs leaning on the church */
+  for(let i = 0; i < 4; i++){
+    cells.push({ x: X - 6 + (hash(i, 91) - 0.5) * 2.6, z: Z + (hash(i, 92) - 0.5) * 2.6,
+      y: 22 + hash(i, 93) * 2.4, sy: 0.3 + hash(i, 94) * 0.5, sx: 0.5 + hash(i, 95) * 1.1, sz: 0.5 + hash(i, 96) * 0.9,
+      ry: hash(i, 97) * 3, rz: (hash(i, 98) - 0.5) * 0.9, color: concColor(758 + i, 0.3) });
+  }
+  cells.push({ x: X - 8.3, z: Z + 5.5, y: 0, sy: 2.7, sx: 0.4, sz: 2.0, rz: 0.45, ry: 0.5, color: concColor(763, 0.28) });
+  cells.push({ x: X + 1.6, z: Z - 11.6, y: 0, sy: 2.1, sx: 0.35, sz: 1.6, rz: -0.4, ry: -0.35, color: concColor(764, 0.26) });
+  cells.push({ x: X - 1.5, z: Z + 11.8, y: 0, sy: 1.7, sx: 0.3, sz: 1.4, rz: 0.3, ry: 0.9, color: concColor(765, 0.24) });
   /* the bell, still hanging */
   cells.push({ x: X - 6, z: Z, y: 19.2, sy: 1.1, sx: 0.05, sz: 0.05, color: 0x6a6256 });
   cells.push({ x: X - 6, z: Z, y: 17.9, sy: 0.9, sx: 0.8, sz: 0.8, color: 0x5a5548 });
@@ -1809,16 +1821,49 @@ function treeRoof(x, z, baseY, h, seed){
     if (h < 2.5) continue;
     if (hash(tries, 9) < 0.45) continue;   /* density variation */
     const s = 1.1 + hash(tries, 10) * 1.4;
-    trunkCells.push({ x, z, y: h, sy: 3.4 * s, sx: 0.7 * s, sz: 0.7 * s, color: 0x55483a });
-    leafCells.push({ x, z, y: h + 2.6 * s, sy: 3.8 * s, sx: 3.2 * s, sz: 3.0 * s,
-      ry: hash(tries, 11) * 3, color: (hash(tries, 12) < 0.5 ? 0x54723f : 0x64854a) });
-    if (hash(tries, 13) > 0.5)
-      leafCells.push({ x: x + 0.8 * s, z: z + 0.4 * s, y: h + 5.6 * s, sy: 2.0 * s, sx: 1.9 * s, sz: 1.7 * s,
-        ry: hash(tries, 14) * 3, color: 0x6f9150 });
+    const v = hash(tries, 41);   /* silhouette mix: ~62% broadleaf, ~22% conifer, ~16% dead */
+    if (v < 0.62){
+      trunkCells.push({ x, z, y: h, sy: 3.4 * s, sx: 0.7 * s, sz: 0.7 * s, color: 0x55483a });
+      leafCells.push({ x, z, y: h + 2.6 * s, sy: 3.8 * s, sx: 3.2 * s, sz: 3.0 * s,
+        ry: hash(tries, 11) * 3, color: (hash(tries, 12) < 0.5 ? 0x54723f : 0x64854a) });
+      if (hash(tries, 13) > 0.5)
+        leafCells.push({ x: x + 0.8 * s, z: z + 0.4 * s, y: h + 5.6 * s, sy: 2.0 * s, sx: 1.9 * s, sz: 1.7 * s,
+          ry: hash(tries, 14) * 3, color: 0x6f9150 });
+    } else if (v < 0.84){
+      /* conifer: thin trunk, three shrinking tiers — evergreen, never tints with the seasons */
+      trunkCells.push({ x, z, y: h, sy: 3.4 * s, sx: 0.45 * s, sz: 0.45 * s, color: 0x4a3f33 });
+      leafCells.push({ x, z, y: h + 1.5 * s, sy: 2.5 * s, sx: 2.7 * s, sz: 2.7 * s, ry: hash(tries, 42) * 3, color: 0x3f5c38 });
+      leafCells.push({ x, z, y: h + 3.3 * s, sy: 1.9 * s, sx: 1.9 * s, sz: 1.9 * s, ry: hash(tries, 43) * 3, color: 0x46653f });
+      leafCells.push({ x, z, y: h + 4.8 * s, sy: 1.4 * s, sx: 1.2 * s, sz: 1.2 * s, ry: hash(tries, 44) * 3, color: 0x4d7046 });
+    } else {
+      /* dead tree: bare, leaning, broken grey trunk */
+      trunkCells.push({ x, z, y: h, sy: 4.4 * s, sx: 0.55 * s, sz: 0.55 * s, rz: (hash(tries, 45) - 0.5) * 0.12, color: 0x8a8177 });
+      trunkCells.push({ x: x + 0.3 * s, z, y: h + 3.6 * s, sy: 1.2 * s, sx: 0.3 * s, sz: 0.3 * s,
+        rz: (hash(tries, 46) - 0.5) * 0.6, color: 0x8a8177 });
+    }
     placed++;
   }
   columns(trunkCells, trunkMat);
   columns(leafCells, leafMat);
+}
+
+/* ---------- far hill ring: sits just past the map edge so the terrain cliff hides in the horizon ---------- */
+{
+  const HILL_COLS = [0x8b9486, 0x939a8c, 0x838c7f, 0x9aa093, 0x86907f];
+  const cells = [];
+  for(let i = 0; i < 28; i++){
+    const a = (i / 28) * Math.PI * 2 + (hash(i, 51) - 0.5) * 0.3;
+    const r = 330 + hash(i, 52) * 110;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const w = 55 + hash(i, 53) * 60, d = 45 + hash(i, 54) * 45, hgt = 16 + hash(i, 55) * 28;
+    cells.push({ x, z, y: -14, sy: hgt, sx: w, sz: d, ry: hash(i, 57) * 3,
+      color: HILL_COLS[Math.floor(hash(i, 56) * HILL_COLS.length)] });
+    if (hash(i, 58) > 0.45)   /* second, lower tier on some peaks */
+      cells.push({ x: x + (hash(i,59) - 0.5) * w * 0.3, z: z + (hash(i,60) - 0.5) * d * 0.3,
+        y: hgt - 15, sy: hgt * (0.35 + hash(i,61) * 0.3), sx: w * 0.5, sz: d * 0.45,
+        ry: hash(i, 57) * 3, color: HILL_COLS[Math.floor(hash(i, 62) * HILL_COLS.length)] });
+  }
+  columns(cells, lamber(0xffffff));
 }
 
 /* ---------- bushes + ferns (instanced, near roads and ruins) ---------- */
@@ -2001,7 +2046,8 @@ function updateSeasons(dt){
     const a = hash(i, 81) * 6.28, r = 20 + hash(i, 82) * 150;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (groundH(x, z) > 1.5) continue;
-    cells.push({ x, z, y: groundH(x, z), sy: 0.34, sx: 0.34, sz: 3 + hash(i,83) * 4, ry: hash(i,84) * 3, color: 0x5a4e3e });
+    const d = 0.5 + hash(i, 87) * 0.22;   /* was 0.34 — too thin, read as fence pickets */
+    cells.push({ x, z, y: groundH(x, z) + 0.05, sy: d, sx: d, sz: 3 + hash(i,83) * 4, ry: hash(i,84) * 3, color: 0x5a4e3e });
   }
   columns(cells, lamber(0xffffff));
 }
@@ -2116,6 +2162,13 @@ function updateDayNight(dt){
     for (const m of snowMats) m.opacity = snowAmt * 0.9;
     for (const m of snowMeshes) m.visible = snowAmt > 0.02;
   }
+  /* HUD: brighten the title text once night falls */
+  const nUi = nightF > 0.45;
+  if (nUi !== uiNight){
+    uiNight = nUi;
+    uiEl.style.color = nUi ? '#e9e4d2' : '#23281f';
+    uiEl.style.textShadow = nUi ? '0 1px 3px rgba(0,0,0,.8)' : '0 1px 2px rgba(255,255,255,.45)';
+  }
   return dayF;
 }
 
@@ -2157,7 +2210,9 @@ if (P_WX && WX_STATES[P_WX]){
   Object.assign(wx, WX_STATES[P_WX]);
   wxDwell = 1e9;   /* pinned weather: no random roll over it */
 }
-const BASE_FOG = { near: 90, far: 480 };
+const BASE_FOG = { near: 78, far: 408 };   /* ~15% less fog than 90/480 — clearer days, horizon stays readable */
+const uiEl = document.getElementById('ui');
+let uiNight = false;   /* HUD contrast toggle (dark text is unreadable on the night sky) */
 
 function updateWeather(dt){
   wxDwell -= dt;
