@@ -57157,6 +57157,7 @@ function updateDeer(dt, dayF){
   for(let i = deerList.length - 1; i >= 0; i--){
     const a = deerList[i];
     a.t -= dt;
+    if (a.rustleT > 0) a.rustleT -= dt;
     const pd = playerDist(a.g.position.x, a.g.position.z);
     const adult = a.target === a;
     /* T1: player startle — the herd alerts together: any adult seen within 14u
@@ -57172,7 +57173,7 @@ function updateDeer(dt, dayF){
       if (seen){ a.state = 'alert'; a.t = 0.4; a.dir = faceYaw(a.g.position.x, a.g.position.z); }
     }
     if (a.state === 'alert' && a.t <= 0){
-      if (pd < 9){ a.state = 'flee'; a.t = 6 + Math.random() * 4; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; }   /* away from the player */
+      if (pd < 9){ a.state = 'flee'; a.t = 6 + Math.random() * 4; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; if (Math.random() < 0.4 && (a.rustleT || 0) <= 0){ deerRustle(clamp01(1 - pd / 9) * 0.16); a.rustleT = 1.5; } }   /* away from the player */
       else { a.state = 'stand'; a.t = 3 + Math.random() * 3; }
     }
     if (a.state === 'flee'){
@@ -57464,9 +57465,10 @@ function updateRabbits(dt, dayF){
   if (a === hunt.rab && hunt.phase > 0) continue;   /* T4: the hunt owns the rabbit */
   const pd = playerDist(a.g.position.x, a.g.position.z);
   a.t -= dt;
+  if (a.thumpT > 0) a.thumpT -= dt;
   /* T1: the wanderer approaches — freeze with ears back, then bolt and move home */
   if (a.state === 'hop' && pd < 10){ a.state = 'freeze'; a.t = 2.5; }
-  if (a.state === 'freeze' && pd < 5){ a.state = 'bolt'; a.t = 2.2; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; }
+  if (a.state === 'freeze' && pd < 5){ a.state = 'bolt'; a.t = 2.2; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; if ((a.thumpT || 0) <= 0){ rabbitThump(clamp01(1 - pd / 40) * 0.4); a.thumpT = 2.5; } }   /* T7: thump on bolt */
   if (a.t <= 0){
     if (a.state === 'freeze'){ a.state = 'hop'; a.t = 1.2 + Math.random() * 1.2; a.dir = Math.random() * 6.28; }
     else if (a.state !== 'bolt'){ a.state = 'freeze'; a.t = 3 + Math.random() * 6; }
@@ -57515,6 +57517,8 @@ function updateHunt(dt, dayF){
         if (hunt.outcome === 'dash'){
           r.state = 'bolt'; r.t = 2.5;
           r.dir = Math.atan2(rx - fx, rz - fz) + (Math.random() - 0.5) * 0.6;   /* straight away from the fox */
+          const hpd = playerDist(rx, rz);   /* T7: the thumps carry the set piece */
+          if (hpd < 45) rabbitThump(clamp01(1 - hpd / 45) * 0.45);
         }
       }
     } else if (hunt.phase === 2){
@@ -58077,6 +58081,7 @@ function initAudio(){
   if (!AC) return;
   let ctx; try { ctx = new AC(); } catch(e){ return; }
   const master = ctx.createGain(); master.gain.value = muted ? 0 : 1; master.connect(ctx.destination);
+  const analyser = ctx.createAnalyser(); analyser.fftSize = 1024; master.connect(analyser);   /* T7: verification tap */
   const bufLen = Math.floor(ctx.sampleRate * 2);
   const noiseBuf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
   const nd = noiseBuf.getChannelData(0);
@@ -58101,8 +58106,8 @@ function initAudio(){
   const waterLP = ctx.createBiquadFilter(); waterLP.type = 'lowpass'; waterLP.frequency.value = 480; waterLP.Q.value = 0.5;
   const waterGain = ctx.createGain(); waterGain.gain.value = 0;
   waterSrc.connect(waterLP); waterLP.connect(waterGain); waterGain.connect(master);
-  audio = { ctx, master, windGain, rainGain, waterGain, windLP, noiseBuf,
-            nextBird: 2 + Math.random() * 3, nextCricket: 2 + Math.random() * 3, thunderDone: false };
+  audio = { ctx, master, analyser, windGain, rainGain, waterGain, windLP, noiseBuf,
+            nextBird: 2 + Math.random() * 3, nextCricket: 2 + Math.random() * 3, nextCaw: 2 + Math.random() * 3, thunderDone: false };
   window.__audio = {
     ctx, masterGain: master, windGain, rainGain, waterGain,
     get state(){ return ctx.state; },
@@ -58111,6 +58116,7 @@ function initAudio(){
     get rainGainValue(){ return rainGain.gain.value; },
     get waterGainValue(){ return waterGain.gain.value; },
     get muted(){ return muted; },
+    get energy(){ const d = new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(d); let m = 0; for (let i = 0; i < d.length; i++){ const v = Math.abs(d[i] - 128); if (v > m) m = v; } return +(m / 128).toFixed(3); },
   };
 }
 function birdChirp(){
@@ -58162,6 +58168,56 @@ function thunder(delay){
   s.connect(lp); lp.connect(g); g.connect(audio.master);
   s.start(now); s.stop(now + dur + 0.1);
 }
+/* T7 — proximity one-shots. Volume is caller-supplied (already distance-scaled).
+   All reuse the birdChirp pattern: transient nodes -> master, zero assets. */
+function crowCaw(vol){
+  if (!audio || muted || vol <= 0) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  const o = ctx.createOscillator(); o.type = 'sawtooth';
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2500; bp.Q.value = 2.5;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  const n = 2 + (Math.random() * 2 | 0);   /* caw-caw / caw-caw-caw */
+  let t = now;
+  for(let i = 0; i < n; i++){
+    o.frequency.setValueAtTime(2200 + Math.random() * 900, t);
+    o.frequency.exponentialRampToValueAtTime(1700 + Math.random() * 300, t + 0.09);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    t += 0.17 + Math.random() * 0.08;
+  }
+  o.connect(bp); bp.connect(g); g.connect(audio.master);
+  o.start(now); o.stop(now + (t - now) + 0.1);
+}
+function deerRustle(vol){
+  if (!audio || muted || vol <= 0) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  const s = ctx.createBufferSource(); s.buffer = audio.noiseBuf; s.playbackRate.value = 1.5 + Math.random() * 0.8;
+  const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400 + Math.random() * 800; bp.Q.value = 0.7;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  const dur = 0.35 + Math.random() * 0.25;
+  g.gain.exponentialRampToValueAtTime(vol, now + 0.05);        /* hooves + grass, two shuffles */
+  g.gain.exponentialRampToValueAtTime(vol * 0.35, now + dur * 0.45);
+  g.gain.exponentialRampToValueAtTime(vol * 0.8, now + dur * 0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  s.connect(bp); bp.connect(g); g.connect(audio.master);
+  s.start(now, Math.random()); s.stop(now + dur + 0.05);
+}
+function rabbitThump(vol){
+  if (!audio || muted || vol <= 0) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  for(let i = 0; i < 3; i++){   /* warning thumps — 3 low sine pulses, pitch-dropping */
+    const t0 = now + i * (0.17 + Math.random() * 0.04);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(95, t0);
+    o.frequency.exponentialRampToValueAtTime(55, t0 + 0.12);
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    g.gain.exponentialRampToValueAtTime(vol * (1 - i * 0.18), t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    o.connect(g); g.connect(audio.master);
+    o.start(t0); o.stop(t0 + 0.2);
+  }
+}
 function updateAudio(dt, dayF){
   if (!audio) return;
   const ctx = audio.ctx;
@@ -58186,6 +58242,20 @@ function updateAudio(dt, dayF){
   if (audio.nextBird <= 0){ if (dayF > 0.5 && wx.rain < 0.3) birdChirp(); audio.nextBird = 2 + Math.random() * 6; }
   audio.nextCricket -= dt;
   if (audio.nextCricket <= 0){ if (nightF > 0.5 && wx.rain < 0.3) cricketChirp(); audio.nextCricket = 1.5 + Math.random() * 4; }
+  /* T7: crow caw — the nearest airborne crow within 50 u, more likely up close */
+  audio.nextCaw -= dt;
+  if (audio.nextCaw <= 0){
+    audio.nextCaw = 4 + Math.random() * 7;
+    if (wx.rain < 0.6){
+      let bd = 1e9;
+      for (const b of birds){
+        if (b === hawk || b.flapRate !== 9 || b.g.scale.x < 0.5) continue;
+        const d = Math.hypot(controls.target.x - b.g.position.x, controls.target.z - b.g.position.z);
+        if (d < bd) bd = d;
+      }
+      if (bd < 50 && Math.random() < 0.35 + 0.65 * clamp01(1 - bd / 25)) crowCaw(clamp01(1 - bd / 50) * 0.22);
+    }
+  }
   if (stormFlash > 0.5 && !audio.thunderDone){ thunder(0.3 + Math.random() * 1.6); audio.thunderDone = true; }
   if (stormFlash <= 0.05) audio.thunderDone = false;
 }

@@ -205,3 +205,30 @@ Notes:
 - Headless dt runs ~0.25× wall clock (rAF + software GL): the 3.6 s sequence takes ~15 wall s; state dumps timed accordingly.
 - The dusk window is short in sim time (dayF 0.35–0.55 ≈ h 18.76–19.00 ≈ 14 sim min ≈ 3.5 wall min at 4-min days) — with a 200 s cooldown and 2 foxes × 2 rabbits the hunt stays a rare "the city is a wild place" moment, not a loop.
 - `window._hunt` exposed for CDP (consistent with `_deer`/`_perch` debug hooks).
+
+## Resolution log — Batch 3 (T7 — proximity audio)
+
+Built and verified headless (Chrome CDP + WebAudio analyser tap, `--autoplay-policy=
+no-user-gesture-required`, 48 kHz), zero console errors on every run.
+
+Design: three distance-gated one-shots reusing the `birdChirp()` pattern (transient
+nodes → master gain, zero assets). Volume is distance-scaled at the call site,
+same `clamp01(1 - d/R)` model as the water bed.
+
+| Item | Evidence |
+|---|---|
+| T7 rabbit thump (synth) | `rabbitThump(0.4)` direct call: peak **0.232** vs wind baseline 0.07 (3.3×), decays to baseline by +300 ms (labfinal envelope). Per-pulse taps prove all 3 pulses fire (0.116 / 0.239 ≈ expected 0.328 / 0.256, phase-attenuated) |
+| T7 rabbit thump (natural) | camera parked 4.5 u from hopping rabbit 1 → bolt at +0.1 s → thump spikes **0.355 @ +0.1 s, 0.240 @ +0.2 s** — first spike exactly equals the computed volume `clamp01(1 − 4.5/40) × 0.4 = 0.355`. Rabbit moved home 8.3 u after the bolt (`x0/z0` updated). `thumpT` cooldown visible decaying (−0.05 at run end) |
+| T7 crow caw (synth) | `crowCaw(0.25)` direct call: peak **0.153** vs baseline 0.07 (2.2×), 2.5 kHz saw through bandpass Q 2.5, 2–3 bursts at 170–250 ms spacing. Scheduled from `updateAudio` on a 4–11 s timer, nearest airborne crow within 50 u, probability 0.35→1.0 with distance, skipped when rain ≥ 0.6 |
+| T7 deer rustle (synth) | `deerRustle(0.2)` direct call: peak **0.095** vs baseline 0.07 (1.4×) — deliberately the quietest: flee trigger is < 9 u, so this is background texture, not an event. Bandpass noise 1.4–2.2 kHz, 350–600 ms, two-shuffle envelope |
+| T7 hunt thump | the T4 dash transition (`phase 1→2`, outcome `dash`) fires the thump with `clamp01(1 − hpd/45) × 0.45` — the set piece keeps its ears when the player watches from up to 45 u away. No cooldown (the 200 s hunt gate is sufficient) |
+| T7 herd anti-stinger | deer flee rustle gated `Math.random() < 0.4` + 1.5 s per-deer cooldown — a 7-deer panic reads as 2–3 rustles, not a machine-gunning |
+| T7 bug caught | `a.thumpT <= 0` / `a.rustleT <= 0` with the fields **undefined** on first use: `undefined <= 0` is false → the first bolt/flee of every animal would have been silent. Fixed with `(a.thumpT \|\| 0) <= 0`. The direct-call lab test cannot see this (bypasses the gate) — the natural trigger test caught it |
+| T7 decay check | silence window after all one-shots: 0.056–0.067 = wind baseline — no leaking nodes |
+
+Notes:
+
+- Headless WebAudio renders **~250 ms behind the JS clock**; a 1024-sample (2.7 ms) analyser window under-measures 80 Hz pulses by up to 4×. All measurements use a 16384-sample (343 ms) window + dense 100 ms reads, taking the max over the burst.
+- `__audio.energy` getter (small window) added for quick checks; the 343 ms tap is probe-side.
+- Mute (`#mute` / 🔊) and the autoplay gesture gate are inherited — the one-shots no-op when `!audio || muted`.
+- Verified-by-hearing: open `ruined-city.html` in a real browser, click once (unlocks audio), walk toward the meadow at dusk. Expected: crow caws from the sky, deer rustle when the herd bolts, three rabbit thumps when one bolts (louder if you watch the hunt).
