@@ -43,9 +43,11 @@
   <h1>The Ruined City</h1>
   <p>Decades after the last bus left, the city has become a wild place. Deer graze the old
   fields, foxes hunt after dark, crows wheel over broken towers, and the weather keeps its own
-  council &mdash; sun, fog, rain, and night, all day. A river winds through the eastern hills
-  and opens into a lake at the map's edge, where old boats still lie wrecked. Everything you
-  see is real and walkable: there is no backdrop wall, only a city lost in the hills.</p>
+  council &mdash; sun, fog, rain, and night, all day. West of town the cathedral stands
+  alone on its stone podium, one spire still reaching, its nave slowly giving way. A river winds
+  through the eastern hills and opens into a lake at the map's edge, where old boats still lie
+  wrecked. Everything you see is real and walkable: there is no backdrop wall, only a city lost
+  in the hills.</p>
 </div>
 <div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes</div>
 <div id="clock"></div>
@@ -54549,8 +54551,9 @@ const CAM_PRESETS = {
   river:  { p: [152, 16, 44],  t: [117, 0, -12] },
   lake:   { p: [30, 26, 150],  t: [116, 0, 262] },
   tower:  { p: [56, 34, 16],   t: [24, 18, -24] },
-  meadow: { p: [-98, 5, -16],  t: [-116, 3, 22] },
+  meadow: { p: [-98, 5, -16],  t: [-124, 10, 78] },
   church: { p: [-48, 50, 112],  t: [-58, 16, 44] },
+  cathedral: { p: [-160, 15, 110], t: [-126, 12, 82] },
   forest: { p: [105, 30, 70],   t: [260, 4, -60] },
   horizon:{ p: [60, 3, 40],    t: [340, 10, 40] },
   anchorA:{ p: [-40, 30, -10],  t: [60, 20, 60] },
@@ -54614,6 +54617,10 @@ function columns(cells, material, noShadow){
    City grid ....... |x|<96, |z|<96. Flat. Blocks every 40m; asphalt roads
                      at x,z ∈ {0,±40,±80} with worn lane dashes.
    Clock tower ..... (24,−24), cleared plaza radius 14.
+   Cathedral ....... (−120, 80) medieval, NW of town on a raised stone
+                     podium (ground-anchored: terrain outside |x|<96 steps), facade to the open meadow, one spire
+                     broken at the tip, south tower collapsed at 15 m, east end
+                     caving in, tree through the broken nave roof. Reserved lot.
    Anchor towers ... (60, 60) 14-storey near-intact; (−20,−20) half-collapsed;
                      (20, 60) open roof + stair core. Reserved lots.
    Ruined city ..... 3–9 storey concrete slabs, stepped + overgrown roofs,
@@ -55199,6 +55206,7 @@ const CLEAR_ZONES = [
   { x: 60,  z: 60,  r: 15 },   /* anchor tower A (tall) */
   { x: -20, z: -20, r: 15 },   /* anchor tower B (half-collapsed) */
   { x: 20,  z: 60,  r: 15 },   /* anchor tower C (open roof) */
+  { x: -120, z: 81, r: 38 },   /* cathedral, NW meadow podium */
 ];
 const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
 
@@ -56448,9 +56456,266 @@ const lighthouse = { beamG: null, beamMat: null, light: null, lanternY: 0 };
 
 /* ============================================================
    SECOND WAVE — bigger landmarks + small props
-   (bus, ferris wheel, dock rowboats/buoys, tyre pile,
+   (cathedral, bus, ferris wheel, dock rowboats/buoys, tyre pile,
     traffic light, tumbleweed)
    ============================================================ */
+
+/* ---------- cathedral (medieval, slowly crumbling) ----------
+   The old square: a stone cathedral, west facade with twin towers,
+   the east end caving in. One spire still reaches (broken at the
+   tip); the other is gone, its rubble spilling down the face. A tree
+   grows up through the broken nave roof; scaffolding still hangs on
+   the north tower. Centre (-20, 20); the facade faces west, toward
+   the meadow. */
+const CATH_LIGHTS = [];   /* night candle lights (cathedral nave) */
+let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
+{
+  const cells = [];
+  const CX = -20, CZ = 20;                    /* nave centre */
+  const STONE_COLS = [0xb3a78f, 0xa99d85, 0x9f9278, 0x96896f].map(c => new THREE.Color(c));
+  const STONE_LIT = new THREE.Color(0xdcd2b8);
+  const st = (seed, lit = 0.24) => {
+    const c = STONE_COLS[Math.abs(Math.floor(seed)) % STONE_COLS.length].clone();
+    c.lerp(STONE_LIT, lit);
+    c.offsetHSL((hash(seed * 2.1, seed * 0.9) - 0.5) * 0.03, (hash(seed * 0.9, seed * 2.7) - 0.5) * 0.06,
+      (hash(seed * 1.3, seed * 0.4) - 0.5) * 0.05);
+    return c;
+  };
+  const GLASS = 0x20242a, SHADOW = 0x3f3a30;  /* dark glass / interior */
+
+  /* --- nave shell (x -33…-7, z 13…27, h 11; east side is failing) --- */
+  cells.push({ x: -29.5, z: 13, y: 5.5, sy: 11, sx: 7, sz: 1.1, color: st(801, 0.26) });   /* north w, west of arm */
+  cells.push({ x: -24,   z: 13, y: 5.5, sy: 11, sx: 4, sz: 1.1, color: st(802, 0.24) });
+  cells.push({ x: -20,   z: 13, y: 10.75, sy: 2.5, sx: 4, sz: 1.1, color: st(803, 0.28) });  /* lintel over arm arch */
+  cells.push({ x: -16.5, z: 13, y: 5.5, sy: 11, sx: 3, sz: 1.1, color: st(804, 0.25) });
+  /* hole x -15…-9.5 (wall gone, interior open) */
+  cells.push({ x: -8.25, z: 13, y: 5.5, sy: 11, sx: 2.5, sz: 1.1, color: st(805, 0.23) });
+  cells.push({ x: -29.5, z: 27, y: 5.5, sy: 11, sx: 7, sz: 1.1, color: st(806, 0.24) });   /* south w, west of arm */
+  cells.push({ x: -25,   z: 27, y: 5.5, sy: 11, sx: 2, sz: 1.1, color: st(807, 0.22) });
+  cells.push({ x: -21,   z: 27, y: 10.75, sy: 2.5, sx: 6, sz: 1.1, color: st(808, 0.26) }); /* lintel over arm arch */
+  cells.push({ x: -15,   z: 27, y: 5.5, sy: 11, sx: 6, sz: 1.1, color: st(809, 0.23) });
+  cells.push({ x: -9.5,  z: 27, y: 3.5, sy: 7, sx: 5, sz: 1.1, color: st(810, 0.2) });     /* broken top, east end */
+  cells.push({ x: -7, z: 14.5, y: 4.5, sy: 9, sx: 1.1, sz: 3, color: st(811, 0.2) });      /* east wall stubs */
+  cells.push({ x: -7, z: 25.5, y: 3, sy: 6, sx: 1.1, sz: 3, color: st(812, 0.18) });
+  /* interior: dark floor + column rows (visible through roof hole + broken walls) */
+  cells.push({ x: -20.25, z: 20, y: 0.35, sy: 0.3, sx: 24.5, sz: 12.8, color: SHADOW });
+  for (const xi of [-29, -24.5, -20, -15.5]) for (const zi of [16.5, 23.5]){
+    cells.push({ x: xi, z: zi, y: 3, sy: 6, sx: 1, sz: 1, color: 0x6b6456 });
+    cells.push({ x: xi, z: zi, y: 6.3, sy: 0.5, sx: 1.5, sz: 1.5, color: 0x76705f });
+  }
+  cells.push({ x: -9, z: 16.5, y: 2.25, sy: 4.5, sx: 0.4, sz: 5, color: 0x57503f });        /* chancel screen, 2 pieces */
+  cells.push({ x: -9, z: 23.5, y: 1.75, sy: 3.5, sx: 0.4, sz: 5, rz: 0.08, color: 0x57503f });
+  /* fallen roof slabs lying in the nave */
+  cells.push({ x: -10.5, z: 21.5, y: 0.55, sy: 0.5, sx: 9, sz: 6.8, ry: 0.24, color: st(817, 0.16) });
+  cells.push({ x: -13.5, z: 16.5, y: 0.5, sy: 0.45, sx: 6.5, sz: 5.2, ry: -0.42, color: st(818, 0.15) });
+
+  /* --- nave roof: west half remains, east half gone (broken gable) --- */
+  cells.push({ x: -22.4, z: 23.9, y: 13.7, sy: 0.55, sx: 20.8, sz: 8.2, rx: 0.62, color: st(821, 0.12) });
+  cells.push({ x: -22.4, z: 16.1, y: 13.7, sy: 0.55, sx: 20.8, sz: 8.2, rx: -0.62, color: st(822, 0.13) });
+  cells.push({ x: -22.4, z: 20, y: 16.6, sy: 0.4, sx: 20.8, sz: 1.1, color: st(823, 0.3) });  /* ridge */
+  cells.push({ x: -12, z: 14.8, y: 12.8, sy: 0.5, sx: 3.4, sz: 2.6, rx: 0.5, ry: 0.1, color: st(824, 0.18) });  /* jagged gable edge */
+  cells.push({ x: -11.4, z: 17.2, y: 13.8, sy: 0.45, sx: 2.6, sz: 2.2, rx: 0.85, ry: -0.2, color: st(825, 0.17) });
+  cells.push({ x: -12.4, z: 15.6, y: 15.4, sy: 0.4, sx: 2.2, sz: 1.6, rx: 0.35, ry: 0.4, color: st(826, 0.16) });
+
+  /* --- transept: north arm intact, south arm collapsed at the east end --- */
+  cells.push({ x: -26, z: 9.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(831, 0.24) });
+  cells.push({ x: -14, z: 9.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(832, 0.25) });
+  cells.push({ x: -17, z: 9.5, y: 14, sy: 0.5, sx: 6.6, sz: 7.8, rz: 0.59, color: st(833, 0.2) });
+  cells.push({ x: -23, z: 9.5, y: 14, sy: 0.5, sx: 6.6, sz: 7.8, rz: -0.59, color: st(834, 0.21) });
+  cells.push({ x: -20, z: 9.5, y: 16.2, sy: 0.35, sx: 7.4, sz: 1, color: st(835, 0.25) });
+  cells.push({ x: -20, z: 6, y: 6, sy: 12, sx: 12.4, sz: 1.1, color: st(836, 0.26) });        /* north gable */
+  cells.push({ x: -20, z: 6, y: 12.9, sy: 1.6, sx: 9, sz: 1, color: st(837, 0.24) });
+  cells.push({ x: -20, z: 6, y: 14.5, sy: 1.6, sx: 5.5, sz: 1, color: st(838, 0.25) });
+  cells.push({ x: -20, z: 6, y: 15.9, sy: 1.5, sx: 2.4, sz: 1, color: st(839, 0.26) });
+  cells.push({ x: -20, z: 6, y: 17, sy: 1.1, sx: 0.7, sz: 0.7, rz: 0.15, color: st(840, 0.2) });  /* crocket, snapped */
+  cells.push({ x: -20, z: 9.5, y: 0.3, sy: 0.25, sx: 11.4, sz: 6.4, color: SHADOW });
+  /* south arm — west half intact */
+  cells.push({ x: -26, z: 30.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(841, 0.23) });
+  cells.push({ x: -20, z: 30.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(842, 0.24) });
+  cells.push({ x: -23, z: 30.5, y: 14, sy: 0.5, sx: 6.6, sz: 7.8, rz: 0.59, color: st(843, 0.19) });
+  cells.push({ x: -23, z: 30.5, y: 16.2, sy: 0.35, sx: 7.4, sz: 1, color: st(844, 0.23) });
+  cells.push({ x: -23, z: 34, y: 6, sy: 12, sx: 6.4, sz: 1.1, color: st(845, 0.25) });        /* half gable */
+  cells.push({ x: -23, z: 34, y: 12.9, sy: 1.6, sx: 4.4, sz: 1, color: st(846, 0.23) });
+  cells.push({ x: -23, z: 34, y: 14.3, sy: 1.4, sx: 2.2, sz: 1, color: st(847, 0.24) });
+  cells.push({ x: -21, z: 34, y: 15.6, sy: 0.8, sx: 1.6, sz: 0.8, rz: 0.4, color: st(848, 0.18) });
+  /* south arm — east half fallen: broken wall stubs, dark floor, rubble run */
+  cells.push({ x: -14, z: 29, y: 2.5, sy: 5, sx: 1.1, sz: 4.4, rz: 0.12, color: st(849, 0.16) });
+  cells.push({ x: -18, z: 33.6, y: 1.8, sy: 3.6, sx: 4.4, sz: 1.1, ry: 0.2, color: st(850, 0.15) });
+  cells.push({ x: -17, z: 30.5, y: 0.3, sy: 0.25, sx: 6, sz: 7, color: SHADOW });
+  cells.push({ x: -15, z: 31.8, y: 0.55, sy: 0.45, sx: 6.4, sz: 5.6, ry: 0.5, color: st(851, 0.15) });
+  cells.push({ x: -12.5, z: 29.5, y: 0.5, sy: 0.9, sx: 5.5, sz: 3.4, ry: 0.2, color: st(852, 0.12) });
+  cells.push({ x: -11, z: 32.5, y: 0.4, sy: 0.7, sx: 4, sz: 2.6, ry: -0.35, color: st(853, 0.11) });
+
+  /* --- west facade: rose window, great portal, stepped gable --- */
+  cells.push({ x: -33.5, z: 15, y: 7, sy: 14, sx: 1.4, sz: 4.4, color: st(861, 0.3) });
+  cells.push({ x: -33.5, z: 25, y: 7, sy: 14, sx: 1.4, sz: 4.4, color: st(862, 0.3) });
+  cells.push({ x: -33.5, z: 20, y: 9.5, sy: 9, sx: 1.4, sz: 5.6, color: st(863, 0.31) });   /* above portal */
+  cells.push({ x: -33.5, z: 20, y: 14.9, sy: 1.8, sx: 1.5, sz: 13.4, color: st(864, 0.28) }); /* gable steps */
+  cells.push({ x: -33.5, z: 20, y: 16.7, sy: 1.8, sx: 1.5, sz: 8.8, color: st(865, 0.29) });
+  cells.push({ x: -33.5, z: 20, y: 18.4, sy: 1.6, sx: 1.5, sz: 4.4, color: st(866, 0.3) });
+  cells.push({ x: -33.5, z: 20, y: 20.3, sy: 2.2, sx: 0.5, sz: 0.5, color: st(867, 0.22) });  /* finial cross */
+  cells.push({ x: -33.3, z: 19.9, y: 21.6, sy: 1.1, sx: 0.4, sz: 0.4, rz: 0.35, ry: 0.3, color: st(868, 0.16) });
+  /* rose window */
+  cells.push({ x: -33.9, z: 20, y: 10.2, sy: 4.6, sx: 0.5, sz: 4.6, color: 0x14171c });
+  for (let i = 0; i < 8; i++){
+    const a = i * Math.PI / 4;
+    cells.push({ x: -34.05, y: 10.2 + Math.cos(a) * 2.55, z: 20 + Math.sin(a) * 2.55,
+      sy: 1.5, sx: 0.5, sz: 1.5, ry: a, color: st(870 + i, 0.5) });
+  }
+  for (let i = 0; i < 4; i++)
+    cells.push({ x: -34.05, y: 10.2, z: 20, sy: 4.3, sx: 0.35, sz: 0.4, ry: i * Math.PI / 4, color: st(880 + i, 0.45) });
+  /* great portal: jambs, pointed arch, dark door, steps */
+  cells.push({ x: -33.8, z: 17.9, y: 2.7, sy: 5.4, sx: 1.5, sz: 1.9, color: st(885, 0.28) });
+  cells.push({ x: -33.8, z: 22.1, y: 2.7, sy: 5.4, sx: 1.5, sz: 1.9, color: st(886, 0.28) });
+  cells.push({ x: -33.8, z: 18.5, y: 6.9, sy: 4.8, sx: 1.2, sz: 1, rz: 0.45, color: st(887, 0.3) });
+  cells.push({ x: -33.8, z: 21.5, y: 6.9, sy: 4.8, sx: 1.2, sz: 1, rz: -0.45, color: st(888, 0.3) });
+  cells.push({ x: -33.9, z: 20, y: 2.7, sy: 5.4, sx: 0.4, sz: 4.2, color: 0x171a1e });
+  cells.push({ x: -34.9, z: 20, y: 0.25, sy: 0.5, sx: 2.6, sz: 6.4, color: st(889, 0.18) });
+  cells.push({ x: -34.7, z: 20, y: 7, sy: 14, sx: 0.7, sz: 2, color: st(997, 0.36) });   /* central buttress */
+  cells.push({ x: -34.45, z: 20, y: 8.3, sy: 0.6, sx: 1.9, sz: 13.4, color: st(998, 0.34) });  /* cornice line */
+
+  /* --- twin towers --- */
+  /* north tower (z=10): whole, spire broken at the tip, bell still hanging */
+  cells.push({ x: -34.5, z: 10, y: 9.5, sy: 19, sx: 6, sz: 6, color: st(891, 0.26) });
+  cells.push({ x: -34.5, z: 10, y: 19.2, sy: 0.4, sx: 6.5, sz: 6.5, color: st(892, 0.3) });  /* cornice */
+  cells.push({ x: -37.55, z: 10, y: 12, sy: 6, sx: 0.4, sz: 1.4, color: GLASS });           /* tall lancet */
+  cells.push({ x: -37.2, z: 8.35, y: 21, sy: 4, sx: 0.9, sz: 1.7, color: st(893, 0.27) });  /* bell stage, west wall */
+  cells.push({ x: -37.2, z: 11.65, y: 21, sy: 4, sx: 0.9, sz: 1.7, color: st(894, 0.27) }); /* (gap = west opening) */
+  cells.push({ x: -34.5, z: 6.65, y: 21, sy: 4, sx: 5.4, sz: 0.9, color: st(895, 0.26) });
+  cells.push({ x: -31.8, z: 10, y: 21, sy: 4, sx: 0.9, sz: 5.4, color: st(896, 0.26) });
+  cells.push({ x: -34.5, z: 13.35, y: 21, sy: 4, sx: 5.4, sz: 0.9, color: st(897, 0.26) });
+  cells.push({ x: -34.5, z: 10, y: 21, sy: 3.5, sx: 4.5, sz: 4.5, color: 0x241f19 });       /* dark interior */
+  cells.push({ x: -34.5, z: 10, y: 20.9, sy: 1, sx: 1.1, sz: 1.1, color: 0x5a5548 });       /* the bell */
+  cells.push({ x: -34.5, z: 10, y: 21.6, sy: 0.45, sx: 0.7, sz: 0.7, color: 0x4a453a });
+  cells.push({ x: -31.6, z: 10, y: 21, sy: 3.2, sx: 0.4, sz: 1.8, color: GLASS });
+  cells.push({ x: -34.5, z: 6.4, y: 21, sy: 3.2, sx: 1.8, sz: 0.4, color: GLASS });
+  cells.push({ x: -34.5, z: 13.6, y: 21, sy: 3.2, sx: 1.8, sz: 0.4, color: GLASS });
+  cells.push({ x: -34.5, z: 10, y: 23.3, sy: 0.7, sx: 6.6, sz: 6.6, color: st(900, 0.3) });  /* parapet */
+  cells.push({ x: -34.5, z: 10, y: 25.4, sy: 4.2, sx: 4.6, sz: 4.6, color: st(901, 0.24) });  /* spire tiers */
+  cells.push({ x: -34.5, z: 10, y: 28.7, sy: 3.4, sx: 3.2, sz: 3.2, color: st(902, 0.26) });
+  cells.push({ x: -34.5, z: 10, y: 31.3, sy: 2.4, sx: 2, sz: 2, color: st(903, 0.28) });
+  cells.push({ x: -34.3, z: 10.1, y: 32.9, sy: 1.2, sx: 1.2, sz: 1.2, rz: 0.4, ry: 0.5, color: st(904, 0.2) }); /* snapped tip */
+  cells.push({ x: -34.9, z: 9.7, y: 33.4, sy: 0.5, sx: 0.8, sz: 0.8, rz: 0.7, ry: 0.2, color: st(905, 0.16) });
+  cells.push({ x: -34.1, z: 10.5, y: 34.1, sy: 0.4, sx: 0.6, sz: 0.6, rz: -0.5, ry: 0.8, color: st(906, 0.14) });
+  /* south tower (z=30): collapsed at 17 m — spire gone, rubble on the face */
+  cells.push({ x: -34.5, z: 30, y: 8.5, sy: 17, sx: 6, sz: 6, color: st(911, 0.24) });
+  cells.push({ x: -34.5, z: 30, y: 17.2, sy: 0.4, sx: 6.4, sz: 6.4, color: st(912, 0.28) });
+  cells.push({ x: -37.55, z: 30, y: 10, sy: 5, sx: 0.4, sz: 1.4, color: GLASS });
+  cells.push({ x: -35.2, z: 30, y: 17.5, sy: 0.7, sx: 6.4, sz: 3.2, rz: 0.22, color: st(913, 0.2) }); /* jagged top */
+  cells.push({ x: -33.8, z: 29.4, y: 18.1, sy: 0.55, sx: 3.4, sz: 2.6, rz: -0.3, ry: 0.3, color: st(914, 0.19) });
+  cells.push({ x: -34.6, z: 30.8, y: 18.4, sy: 0.5, sx: 2.4, sz: 1.8, ry: 0.7, rz: 0.15, color: st(915, 0.17) });
+  cells.push({ x: -34.5, z: 30, y: 18.9, sy: 1.6, sx: 4.2, sz: 4.2, color: st(916, 0.22) });  /* spire stub */
+  cells.push({ x: -34.3, z: 30.2, y: 19.9, sy: 1.1, sx: 2.6, sz: 2.6, rz: 0.45, ry: 0.4, color: st(917, 0.19) });
+  cells.push({ x: -34.5, z: 33.6, y: 6.5, sy: 0.8, sx: 5.4, sz: 1.4, rx: 0.5, color: st(918, 0.12) });  /* rubble on face */
+  cells.push({ x: -34.2, z: 34, y: 3.4, sy: 0.7, sx: 4.6, sz: 1.6, rx: 0.75, color: st(919, 0.11) });
+  cells.push({ x: -33, z: 36.5, y: 0.5, sy: 1, sx: 4.5, sz: 3, ry: 0.3, color: st(920, 0.1) });   /* ground pile */
+  cells.push({ x: -36.5, z: 35, y: 0.4, sy: 0.8, sx: 2.8, sz: 2, ry: 0.8, color: st(921, 0.09) });
+
+  /* --- flying buttresses (nave sides); one south buttress has let go --- */
+  for (const xi of [-29, -25, -21, -17]){
+    cells.push({ x: xi, z: 28.9, y: 4.5, sy: 9, sx: 1.7, sz: 1.7, color: st(930 + xi * -1, 0.2) });
+    cells.push({ x: xi, z: 27.8, y: 9.8, sy: 0.9, sx: 0.9, sz: 4.6, rx: 0.62, color: st(940 + xi * -1, 0.22) });
+    cells.push({ x: xi, z: 11.1, y: 4.5, sy: 9, sx: 1.7, sz: 1.7, color: st(950 + xi * -1, 0.21) });
+    cells.push({ x: xi, z: 12.2, y: 9.8, sy: 0.9, sx: 0.9, sz: 4.6, rx: -0.62, color: st(960 + xi * -1, 0.22) });
+  }
+  cells.push({ x: -15.2, z: 29.8, y: 0.7, sy: 0.8, sx: 0.9, sz: 4.8, ry: 0.4, rx: 0.1, color: st(970, 0.12) }); /* fallen strut */
+  cells.push({ x: -15.8, z: 29.4, y: 0.8, sy: 1.3, sx: 1.4, sz: 1.4, ry: 0.6, rz: 0.25, color: st(971, 0.14) });
+  cells.push({ x: -25, z: 11.1, y: 4.3, sy: 8.6, sx: 1.7, sz: 1.7, rz: 0.1, color: st(972, 0.18) });  /* leaning pier */
+
+  /* --- lancet windows (dark slots) --- */
+  for (const xi of [-28, -24, -20, -16]){
+    cells.push({ x: xi - 0.7, z: 12.8, y: 6.5, sy: 5.2, sx: 1.1, sz: 0.5, color: GLASS });
+    cells.push({ x: xi + 0.7, z: 12.8, y: 6.5, sy: 5.2, sx: 1.1, sz: 0.5, color: GLASS });
+  }
+  for (const xi of [-28, -24]){
+    cells.push({ x: xi - 0.7, z: 27.2, y: 6.5, sy: 5.2, sx: 1.1, sz: 0.5, color: GLASS });
+    cells.push({ x: xi + 0.7, z: 27.2, y: 6.5, sy: 5.2, sx: 1.1, sz: 0.5, color: GLASS });
+  }
+  cells.push({ x: -16, z: 27.2, y: 4.6, sy: 4.4, sx: 1.1, sz: 0.5, color: GLASS });
+  cells.push({ x: -22, z: 5.8, y: 8, sy: 5, sx: 1.1, sz: 0.4, color: GLASS });                 /* gable pairs */
+  cells.push({ x: -18, z: 5.8, y: 8, sy: 5, sx: 1.1, sz: 0.4, color: GLASS });
+  cells.push({ x: -14.6, z: 9.5, y: 7, sy: 5, sx: 0.4, sz: 1.6, color: GLASS });
+  cells.push({ x: -26.35, z: 30.5, y: 7, sy: 5, sx: 0.4, sz: 1.6, color: GLASS });
+
+  /* --- chancel + apse (east end, caving in) --- */
+  cells.push({ x: -5, z: 14.5, y: 4.5, sy: 9, sx: 4.5, sz: 1.1, color: st(981, 0.2) });
+  cells.push({ x: -5, z: 25, y: 3, sy: 6, sx: 4, sz: 1.1, rz: 0.08, color: st(982, 0.18) });
+  cells.push({ x: -4.5, z: 20, y: 0.3, sy: 0.25, sx: 6, sz: 12, color: SHADOW });
+  cells.push({ x: -1.5, z: 20, y: 4.5, sy: 9, sx: 4.5, sz: 10, color: st(983, 0.22) });       /* apse drum */
+  for (const [ox, oz] of [[0.9, 16.4], [0.9, 23.6], [-4.6, 16.4], [-4.6, 23.6]])
+    cells.push({ x: ox, z: oz, y: 4.2, sy: 8.5, sx: 2, sz: 2, color: st(984, 0.2) });          /* round-ish corners */
+  cells.push({ x: -1.5, z: 20, y: 9.3, sy: 0.5, sx: 7, sz: 11, color: 0x332f26 });             /* caved-in top */
+  cells.push({ x: -1, z: 21, y: 9.9, sy: 0.7, sx: 3.4, sz: 2.4, ry: 0.3, color: st(985, 0.12) });
+  cells.push({ x: -3.5, z: 25.5, y: 2.5, sy: 5, sx: 3, sz: 1.1, ry: 0.15, color: st(986, 0.16) });
+  cells.push({ x: 0.75, z: 20, y: 5, sy: 6, sx: 0.4, sz: 2.4, color: GLASS });                 /* apse window */
+
+  /* --- abandoned scaffolding on the north tower (rusty, thin) --- */
+  const SC = 0x6e4f36;
+  for (const px of [-38.4, -30.6]) for (const pz of [6.2, 13.8])
+    cells.push({ x: px, z: pz, y: 10.5, sy: 21, sx: 0.28, sz: 0.28, color: SC });
+  for (const yy of [7, 12, 17]){
+    for (const pz of [6.2, 13.8]) cells.push({ x: -34.5, z: pz, y: yy, sy: 0.2, sx: 8.2, sz: 0.2, color: SC });
+    for (const px of [-38.4, -30.6]) cells.push({ x: px, z: 10, y: yy, sy: 0.2, sx: 0.2, sz: 8.2, color: SC });
+  }
+  cells.push({ x: -34.5, z: 10, y: 14, sy: 11, sx: 0.28, sz: 0.28, ry: 0.78, color: SC });
+
+  /* --- ivy, moss, fallen masonry, rubble field --- */
+  cells.push({ x: -34.3, z: 15.6, y: 4, sy: 8, sx: 0.25, sz: 1.6, color: IVY_G[1] });
+  cells.push({ x: -34.3, z: 24.4, y: 3, sy: 6, sx: 0.25, sz: 1.4, color: IVY_G[3] });
+  cells.push({ x: -19, z: 27.5, y: 0.7, sy: 1.3, sx: 9, sz: 0.5, color: MOSS_G[2] });
+  cells.push({ x: -24, z: 12.5, y: 0.7, sy: 1.1, sx: 7, sz: 0.5, color: MOSS_G[0] });
+  cells.push({ x: -34.5, z: 30, y: 16, sy: 0.3, sx: 4.6, sz: 4.6, color: MOSS_G[1] });        /* moss on the broken crown */
+  cells.push({ x: -37, z: 25.5, y: 1.3, sy: 2.6, sx: 0.5, sz: 2.2, rz: 0.4, ry: 0.4, color: st(991, 0.2) });  /* slabs leaning on facade */
+  cells.push({ x: -29, z: 13.5, y: 1, sy: 1.9, sx: 0.4, sz: 1.6, rz: -0.35, ry: 0.7, color: st(992, 0.18) });
+  for (let i = 0; i < 18; i++){
+    const a = hash(i, 901) * 6.283, r = 17 + hash(i, 902) * 9;
+    cells.push({ x: CX + Math.cos(a) * r, z: CZ + Math.sin(a) * r, y: 0.3 + hash(i, 903) * 0.5,
+      sy: 0.3 + hash(i, 904) * 0.7, sx: 0.5 + hash(i, 905) * 1.3, sz: 0.5 + hash(i, 906) * 1.1,
+      ry: hash(i, 907) * 3, color: st(995 + i, 0.12) });
+  }
+
+  /* moved out of town to the west meadow (-120, 20). Outside |x|<96 the terrain
+     terraces (steps up to ~2 m across a lot this size), so the whole building is
+     ground-anchored at runtime: sample groundH over the footprint, sit it on a
+     raised stone podium. Real cathedrals got podiums too. */
+  const CMX = -120, CMZ = 80, DX = CMX - CX, DZ = CMZ - CZ;  /* west NW meadow, outside the deer/fox band */
+  let gmax = 0;
+  for (const ox of [-18, 0, 18]) for (const oz of [-15, 0, 15])
+    gmax = Math.max(gmax, groundH(CMX + ox, CMZ + oz));
+  const BASE = gmax + 0.15;
+  /* close near-ground float gaps: floors/rubble sat 0.2-0.65 m above the plain */
+  for (const c of cells){
+    const yy = c.y || 0, sy = c.sy || 1, top = yy + sy / 2, bot = yy - sy / 2;
+    if (bot > 0.02 && bot < 1.5){ c.sy = top; c.y = top / 2; }
+  }
+  /* the podium: buries terrace steps under the lot (deep: terrain falls ~5 m west→east) */
+  cells.push({ x: CX, z: CZ + 1, y: -4, sy: 8, sx: 48, sz: 38, color: st(931, 0.1) });
+  cells.push({ x: CX, z: CZ + 1, y: -0.05, sy: 0.1, sx: 47, sz: 37, color: st(932, 0.22) });
+  for (const c of cells){ c.x += DX; c.z += DZ; c.y = (c.y || 0) + BASE; }
+  columns(cells, lamber(0xffffff));
+  BLOCKS.push({ x: CMX, z: CMZ + 1, w: 50, d: 40 });   /* keep vegetation off the podium */
+  /* the reclamation: a tree up through the broken nave roof, another through the fallen transept */
+  tree(CMX + 10.5, 21.5 + DZ, 12.5, 1.5, 9417, 0.55 + BASE);
+  treeRoof(CMX + 2.5, 30.5 + DZ, 0.6 + BASE, 7, 9418);
+  /* candles in the broken nave — visible at night through the roofless bay */
+  const candle = new THREE.PointLight(0xffb45e, 0, 46, 2);
+  candle.position.set(CMX + 9.5, 3.2 + BASE, 20 + DZ);
+  scene.add(candle);
+  CATH_LIGHTS.push(candle);
+  /* votive cluster under the open roof — small flames visible from outside */
+  CATH_FLAME_MAT = new THREE.MeshLambertMaterial({ color: 0xffd9a0, emissive: 0xff8c2e, emissiveIntensity: 0 });
+  const waxMat = lamber(0xe6ddc2);
+  for (let i = 0; i < 9; i++){
+    const a = hash(900 + i * 7.3, 41) * Math.PI * 2, r = 0.5 + hash(410 + i * 3.1, 90) * 1.7;
+    const fx = CMX + 9.5 + Math.cos(a) * r, fz = 20 + DZ + Math.sin(a) * r * 1.6;
+    const hh = 0.4 + hash(i, 5) * 0.55;
+    const wax = new THREE.Mesh(new THREE.BoxGeometry(0.24, hh, 0.24), waxMat);
+    wax.position.set(fx, 0.5 + BASE + hh / 2, fz);
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), CATH_FLAME_MAT);
+    fl.position.set(fx, wax.position.y + hh / 2 + 0.12, fz);
+    scene.add(wax); scene.add(fl);
+  }
+}
 
 /* ---------- the last bus (derelict transit bus, west meadow) ---------- */
 function makeBus(x, y, z, ry, seed){
@@ -56639,6 +56904,22 @@ function tree(x, z, h, w, seed, baseY, dense){
   t2.rotation.z = (hash(seed,13)-0.5)*0.06; t2.castShadow = true; g.add(t2);
   const rf = new THREE.Mesh(B(w*1.7, 0.35, w*1.6), BARK_D);
   rf.position.y = 0.15; rf.castShadow = true; g.add(rf);
+  /* root flare: widens the base so the trunk stops reading as a column */
+  const rf2 = new THREE.Mesh(B(w*2.2, 0.6, w*2.0), BARK_D);
+  rf2.position.y = 0.05; rf2.castShadow = true; g.add(rf2);
+  if (h >= 6 && kind === 0){
+    /* low limbs on big trees: a few stubby, sloping boughs (thin, drooping — not bars) */
+    const nl = 2 + Math.floor(hash(seed, 70) * 2);
+    for (let i = 0; i < nl; i++){
+      const a = (i / nl) * Math.PI * 2 + hash(seed, 71 + i) * 1.6;
+      const limb = new THREE.Mesh(B(w*0.8, h*0.05, w*0.32), BARK);
+      const ly = h * (0.3 + hash(seed, 75 + i) * 0.22);
+      limb.position.set(Math.cos(a) * w*0.75, ly, Math.sin(a) * w*0.75);
+      limb.rotation.y = -a;
+      limb.rotation.z = (hash(seed, 79 + i) - 0.5) * 0.7 + (hash(seed, 80 + i) < 0.5 ? 0.3 : -0.3);
+      limb.castShadow = true; g.add(limb);
+    }
+  }
   if (kind === 1){
     /* conifer: a tall cone of stacked leaf slabs, narrow, dark green */
     const con = new THREE.Mesh(B(w*0.5, h*0.5, w*0.48), BARK);
@@ -56706,7 +56987,7 @@ function treeRoof(x, z, baseY, h, seed){
 /* scattered hero trees around the city + meadow */
 {
   const spots = [
-    [-6, 30, 6.5], [40, -28, 7], [-72, 12, 8], [66, 52, 6], [-30, 58, 7.5],
+    [-8, 60, 6.5], [40, -28, 7], [-72, 12, 8], [66, 52, 6], [-30, 58, 7.5],
     [74, -8, 6.5], [-56, -34, 8], [30, 70, 7], [-84, -52, 9], [88, 40, 6.5],
     [-16, 78, 7.5], [56, -70, 8], [16, -84, 6.5], [-78, 74, 7], [84, 76, 6],
     [-100, 20, 9], [-112, -8, 8.5], [-98, 44, 7.5], [-116, 60, 9],
@@ -56759,6 +57040,8 @@ function treeRoof(x, z, baseY, h, seed){
       trunkCells.push({ x, z, y: h, sy: 4.4 * s, sx: 0.55 * s, sz: 0.55 * s, rz: (hash(tries, 45) - 0.5) * 0.12, color: 0x8a8177 });
       trunkCells.push({ x: x + 0.3 * s, z, y: h + 3.6 * s, sy: 1.2 * s, sx: 0.3 * s, sz: 0.3 * s,
         rz: (hash(tries, 46) - 0.5) * 0.6, color: 0x8a8177 });
+      trunkCells.push({ x: x - 0.35 * s, z: z + 0.15 * s, y: h + 2.9 * s, sy: 0.9 * s, sx: 0.26 * s, sz: 0.26 * s,
+        rz: (hash(tries, 47) - 0.5) * 0.9, color: 0x8a8177 });
     }
     placed++;
   }
@@ -56793,55 +57076,107 @@ function treeRoof(x, z, baseY, h, seed){
     const a = hash(i, 31) * 6.28, r = 8 + hash(i, 32) * 130;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (groundH(x, z) > 1.5) continue;
-    const flat = hash(i, 60) < 0.35;   /* some low and wide, some tall and narrow */
+    const kind = hash(i, 60);   /* 0 low+wide, 1 lumpy round, 2 tall+narrow */
     const s = 0.5 + hash(i, 33) * 0.9;
-    if (flat){
+    const col = () => BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)];
+    if (kind < 0.35){
       /* low shrub: capped width (was up to ~3.4 — read as a toy block) + a lumpy offset top box */
       const w1 = 0.8 + hash(i, 62) * 0.9, d1 = 0.7 + hash(i, 63) * 0.8;
       cells.push({ x, z, y: groundH(x, z), sy: 0.4 + hash(i, 61) * 0.35, sx: w1, sz: d1,
-        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+        ry: hash(i, 34) * 3, color: col() });
       cells.push({ x: x + (hash(i, 71) - 0.5) * w1 * 0.5, z: z + (hash(i, 72) - 0.5) * d1 * 0.5,
         y: groundH(x, z) + 0.26, sy: 0.3 + hash(i, 73) * 0.3, sx: w1 * 0.55, sz: d1 * 0.55,
         ry: hash(i, 34) * 3 + 0.5, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
+    } else if (kind < 0.75){
+      /* lumpy round bush: three offset boxes, no single-block silhouette */
+      const w1 = s * 0.9;
+      cells.push({ x, z, y: groundH(x, z), sy: s * 0.62, sx: w1, sz: w1 * 0.92, ry: hash(i, 34) * 3, color: col() });
+      cells.push({ x: x + w1 * 0.34, z: z - w1 * 0.2, y: groundH(x, z) + 0.3 * s, sy: s * 0.45, sx: w1 * 0.62, sz: w1 * 0.55,
+        ry: hash(i, 34) * 3 + 0.7, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
+      cells.push({ x: x - w1 * 0.3, z: z + w1 * 0.28, y: groundH(x, z) + 0.22 * s, sy: s * 0.38, sx: w1 * 0.5, sz: w1 * 0.45,
+        ry: hash(i, 34) * 3 + 1.3, color: col() });
     } else {
+      /* tall narrow shrub: two stacked boxes, slightly offset */
       cells.push({ x, z, y: groundH(x, z),
         sy: s * (0.8 + hash(i, 61) * 0.9), sx: s * 0.9, sz: s * 0.8,
-        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+        ry: hash(i, 34) * 3, color: col() });
+      cells.push({ x: x + s * 0.25, z: z + s * 0.15, y: groundH(x, z) + s * 0.55,
+        sy: s * 0.5, sx: s * 0.55, sz: s * 0.5,
+        ry: hash(i, 34) * 3 + 0.9, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
     }
   }
   const bushMesh = columns(cells, lamber(0xffffff));
   if (bushMesh) registerSeasonFoliage(bushMesh, 'bush');
 }
 
-/* ---------- grass tufts: clustered instanced, gentle sway ---------- */
+/* merge a list of box specs {x,y,z,px,py,pz,ry,rz} into one indexed geometry (base of each box at py) */
+function mergeClump(specs){
+  const pos = [], norm = [], uv = [], idx = [];
+  let off = 0;
+  for (const s of specs){
+    const g = new THREE.BoxGeometry(s.x, s.y, s.z);
+    g.translate(0, s.y / 2, 0);                       /* base at origin → tilt pivots at ground */
+    if (s.ry) g.rotateY(s.ry);
+    if (s.rz) g.rotateZ(s.rz);
+    g.translate(s.px || 0, s.py || 0, s.pz || 0);
+    const p = g.attributes.position, n = g.attributes.normal, u = g.attributes.uv, ix = g.index;
+    for (let i = 0; i < p.count; i++){
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      norm.push(n.getX(i), n.getY(i), n.getZ(i));
+      uv.push(u.getX(i), u.getY(i));
+    }
+    for (let i = 0; i < ix.count; i++) idx.push(ix.getX(i) + off);
+    off += p.count;
+    g.dispose();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/* ---------- grass tufts: clustered instanced clumps, gentle sway ---------- */
 const grassClusters = [];
 {
-  const tuftGeo = new THREE.BoxGeometry(0.07, 0.3, 0.07);
-  tuftGeo.translate(0, 0.15, 0);
+  /* a clump = 4 blades of differing height/lean, merged into one geometry (tallest blade 1.0) */
+  const tuftGeo = mergeClump([
+    { x: 0.06,  y: 1.0,  z: 0.06,  px: 0,    pz: 0,    rz: 0.02 },
+    { x: 0.05,  y: 0.82, z: 0.05,  px: 0.07, pz: 0.02, rz: 0.30 },
+    { x: 0.05,  y: 0.76, z: 0.05,  px: -0.06,pz: -0.03,rz: -0.28 },
+    { x: 0.045, y: 0.6,  z: 0.045, px: 0.02, pz: -0.05,ry: 0.8,  rz: -0.42 },
+  ]);
+  const GRASS_COLS = [0x6f8a4e, 0x7d9a58, 0x85a061, 0x67814a];
   const m2 = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const zones = [];
   for(let i = 0; i < 16; i++) zones.push([ (hash(i, 41) - 0.5) * 240, (hash(i, 42) - 0.5) * 240 ]);
   for(const [zx, zz] of zones){
     const cells = [];
-    for(let i = 0; i < 130; i++){
-      const x = zx + (hash(i, 43 + zx) - 0.5) * 46, z = zz + (hash(i, 44 + zz) - 0.5) * 46;
+    for(let i = 0; i < 260; i++){
+      /* 4 blades share one clump anchor → tufts read as clumps, not even pickets */
+      const clump = (i >> 2), b = i & 3;
+      const ax = zx + (hash(clump, 200 + zx) - 0.5) * 46, az = zz + (hash(clump, 201 + zz) - 0.5) * 46;
+      const x = ax + (hash(i, 43 + zx) - 0.5) * 1.0, z = az + (hash(i, 44 + zz) - 0.5) * 1.0;
       const h = groundH(x, z);
       if (h > 1.6) continue;
       if (Math.abs(x) < 5.2 && Math.abs(z) < 5.2) continue;
-      cells.push({ x, z, y: h, sy: 0.7 + hash(i, 45) * 0.9, sx: 1, sz: 1, ry: hash(i, 46) * 3,
-        color: hash(i, 47) < 0.5 ? 0x6f8a4e : 0x7d9a58 });
+      cells.push({ x, z, y: h, sy: 0.5 + hash(i, 45) * 0.45, sx: 1, sz: 1, ry: hash(i, 46) * 3,
+        tiltX: (hash(i, 49 + b) - 0.5) * 0.18, tiltZ: (hash(i, 50 + b) - 0.5) * 0.18,
+        color: GRASS_COLS[Math.floor(hash(i, 47) * GRASS_COLS.length)] });
     }
     if (!cells.length) continue;
     const mesh = new THREE.InstancedMesh(tuftGeo, m2, cells.length);
     const m = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
     cells.forEach((c, i) => {
-      p.set(c.x, c.y, c.z);
-      e.set(0, c.ry, 0); q.setFromEuler(e);
+      p.set(c.x - zx, c.y, c.z - zz);      /* cluster-local: sway pivots on the clump, no sliding */
+      e.set(c.tiltX, c.ry, c.tiltZ); q.setFromEuler(e);
       s.set(c.sx, c.sy, c.sz);
       m.compose(p, q, s);
       mesh.setMatrixAt(i, m);
       mesh.setColorAt(i, tmpC.set(c.color));
     });
+    mesh.position.set(zx, 0, zz);
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceColor.needsUpdate = true;
     mesh.castShadow = true;
@@ -56869,6 +57204,24 @@ function registerSeasonFoliage(mesh, kind){
   const n = mesh.count;
   const base = new Float32Array(ic.array.slice(0, n * 3));
   seasonFoliage.push({ mesh, n, base, from: new Float32Array(base), to: new Float32Array(base), kind });
+}
+/* apply the current season tint to a just-registered mesh (for veg added after a #day snap) */
+function tintFoliageNow(mesh, kind){
+  if (season === 0) return;
+  const f = seasonFoliage[seasonFoliage.length - 1];
+  if (!f || f.mesh !== mesh) return;
+  const str = SEASON_MIX_STR[season];
+  const tc = SEASON_COLORS[kind][season];
+  for (let i = 0; i < f.n; i++){
+    const j = i * 3;
+    f.to[j]   = f.base[j]   + (tc.r - f.base[j])   * str;
+    f.to[j+1] = f.base[j+1] + (tc.g - f.base[j+1]) * str;
+    f.to[j+2] = f.base[j+2] + (tc.b - f.base[j+2]) * str;
+  }
+  const arr = f.mesh.instanceColor.array;
+  for (let i = 0; i < f.n * 3; i++) arr[i] = f.to[i];
+  f.mesh.instanceColor.needsUpdate = true;
+  f.from.set(f.to);
 }
 function applySeasonColors(){
   seasonPrev = season;
@@ -56926,33 +57279,117 @@ function updateSeasons(dt){
   }
 }
 
-/* ---------- wildflowers (meadow + road cracks) ---------- */
+/* ---------- wildflowers (meadow + road cracks) — clumped, not uniformly scattered ---------- */
 {
   const cells = [];
   const FLOWER_C = [0xd8d2c2, 0xc8a0b8, 0xe0c060, 0xb8c8e0, 0xd08878];
-  for(let i = 0; i < 320; i++){
-    let x, z;
-    if (i < 240){ x = -90 - hash(i, 61) * 45; z = -70 + hash(i, 62) * 140; }   /* west meadow */
-    else { x = (hash(i, 63) - 0.5) * 170; z = (hash(i, 64) - 0.5) * 170;
-      const road = Math.min(Math.abs(x), Math.abs(z)); if (road > 4) continue; }
-    if (groundH(x, z) > 1.2) continue;
-    const c = FLOWER_C[Math.floor(hash(i, 65) * 5)];
-    cells.push({ x, z, y: groundH(x, z), sy: 0.26 + hash(i,66) * 0.2, sx: 0.05, sz: 0.05, color: 0x5d7f46 });
-    cells.push({ x, z, y: groundH(x, z) + 0.2, sy: 0.12, sx: 0.14, sz: 0.14, color: c });
+  const centers = [];
+  for (let i = 0; i < 40; i++){   /* meadow clump centres */
+    centers.push([-92 - hash(i, 61) * 42, -65 + hash(i, 62) * 130]);
+  }
+  for (let i = 0; i < 14; i++){   /* road-crack clumps: along the main grid roads */
+    const line = [0, 40, -40, 80, -80][Math.floor(hash(i, 170) * 5)];
+    const along = (hash(i, 171) - 0.5) * 150;
+    const vert = hash(i, 172) < 0.5;
+    const x = vert ? line : along, z = vert ? along : line;
+    if (groundH(x, z) > 0.5) continue;
+    if (Math.abs(z) < 12 && Math.abs(x - BRIDGE_X) < 12) continue;   /* not on the bridge */
+    centers.push([x + (hash(i, 173) - 0.5) * 4, z + (hash(i, 174) - 0.5) * 4]);
+  }
+  for (let ci = 0; ci < centers.length; ci++){
+    const [cx, cz] = centers[ci];
+    const n = 4 + Math.floor(hash(ci, 67) * 6);
+    const pal = FLOWER_C[Math.floor(hash(ci, 175) * 5)];   /* each clump leans on one colour */
+    for (let j = 0; j < n; j++){
+      const x = cx + (hash(ci * 31 + j, 68) - 0.5) * 3.6, z = cz + (hash(ci * 31 + j, 69) - 0.5) * 3.6;
+      if (groundH(x, z) > 1.2) continue;
+      const g = groundH(x, z);
+      const c = hash(ci, 176 + j) < 0.75 ? pal : FLOWER_C[Math.floor(hash(ci * 7 + j, 65) * 5)];
+      cells.push({ x, z, y: g, sy: 0.26 + hash(ci * 13 + j, 66) * 0.2, sx: 0.05, sz: 0.05, color: 0x5d7f46 });
+      cells.push({ x, z, y: g + 0.2, sy: 0.12, sx: 0.14, sz: 0.14, color: c });
+    }
   }
   const flowers = columns(cells, lamber(0xffffff), true);
   if (flowers){ flowerMeshes.push(flowers); flowers.visible = season !== 3; }   /* respect a snapped winter start */
 }
 
+/* ---------- shoreline life: reeds, cattails, shore grass, rocks (river + lake) ---------- */
+{
+  const cells = [];
+  const REED = [0x5d7a3a, 0x6b8a45, 0x4f6e34];
+  /* river banks */
+  for (let i = 0; i < 220; i++){
+    const z = -95 + hash(i, 91) * 250;
+    const cx = riverX(z), hw = waterHalfWidth(z);
+    const side = hash(i, 92) < 0.5 ? -1 : 1;
+    const x = cx + side * (hw + 0.35 + hash(i, 93) * 1.6);
+    const g = groundH(x, z);
+    if (g > 0.9 || g < -0.4) continue;
+    const r = hash(i, 94);
+    if (r < 0.42){
+      /* reed: tall thin blade, slight lean */
+      const hgt = 0.9 + hash(i, 95) * 0.8;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 96) * 3, color: REED[i % 3] });
+    } else if (r < 0.62){
+      /* cattail: reed + brown spike head */
+      const hgt = 1.0 + hash(i, 95) * 0.7;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 96) * 3, color: 0x5d7a3a });
+      cells.push({ x, z, y: g + hgt - 0.14, sy: 0.3, sx: 0.09, sz: 0.09, ry: hash(i, 96) * 3, color: 0x6a4a2e });
+    } else if (r < 0.85){
+      /* shore grass: short tuft blades */
+      for (let b = 0; b < 3; b++){
+        const ox = (hash(i, 100 + b) - 0.5) * 0.5, oz = (hash(i, 103 + b) - 0.5) * 0.5;
+        cells.push({ x: x + ox, z: z + oz, y: groundH(x + ox, z + oz), sy: 0.3 + hash(i, 106 + b) * 0.3, sx: 0.05, sz: 0.05, ry: hash(i, 109 + b) * 3, color: REED[(i + b) % 3] });
+      }
+    } else {
+      /* rock: grey, half-sunk */
+      const s = 0.35 + hash(i, 112) * 0.6;
+      cells.push({ x, z, y: g - 0.08, sy: s * 0.7, sx: s, sz: s * 0.8, ry: hash(i, 113) * 3, color: hash(i, 114) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
+    }
+  }
+  /* lake shore ring */
+  for (let i = 0; i < 260; i++){
+    const a = hash(i, 120) * 6.283;
+    const f = 1.01 + hash(i, 121) * 0.16;
+    const x = LAKE_CX + Math.cos(a) * LAKE_RX * f, z = LAKE_CZ + Math.sin(a) * LAKE_RZ * f;
+    const g = groundH(x, z);
+    if (g > 1.2 || g < WATER_Y + 0.15) continue;
+    const r = hash(i, 122);
+    if (r < 0.45){
+      const hgt = 0.9 + hash(i, 123) * 0.8;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 124) * 3, color: REED[i % 3] });
+    } else if (r < 0.65){
+      const hgt = 1.0 + hash(i, 123) * 0.7;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 124) * 3, color: 0x5d7a3a });
+      cells.push({ x, z, y: g + hgt - 0.14, sy: 0.3, sx: 0.09, sz: 0.09, ry: hash(i, 124) * 3, color: 0x6a4a2e });
+    } else if (r < 0.88){
+      for (let b = 0; b < 3; b++){
+        const ox = (hash(i, 130 + b) - 0.5) * 0.5, oz = (hash(i, 133 + b) - 0.5) * 0.5;
+        cells.push({ x: x + ox, z: z + oz, y: groundH(x + ox, z + oz), sy: 0.3 + hash(i, 136 + b) * 0.3, sx: 0.05, sz: 0.05, ry: hash(i, 139 + b) * 3, color: REED[(i + b) % 3] });
+      }
+    } else {
+      const s = 0.4 + hash(i, 142) * 0.7;
+      cells.push({ x, z, y: g - 0.08, sy: s * 0.7, sx: s, sz: s * 0.8, ry: hash(i, 143) * 3, color: hash(i, 144) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
+    }
+  }
+  const shoreMesh = columns(cells, lamber(0xffffff), true);
+  if (shoreMesh){ registerSeasonFoliage(shoreMesh, 'grass'); tintFoliageNow(shoreMesh, 'grass'); }   /* reeds tint with the seasons */
+}
+
 /* ---------- mushrooms under the big trees ---------- */
 {
   const cells = [];
-  for(const [tx, tz] of [[-108, 10], [1000+0, 0]]){ if (tx === 1000) continue;
-    for(let i = 0; i < 7; i++){
-      const a = hash(tx + i, tz) * 6.28, r = 2.4 + hash(tx, tz + i) * 3;
+  const spots = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20]];
+  for (const [tx, tz] of spots){
+    const n = 5 + Math.floor(hash(tx, tz) * 3);
+    for (let i = 0; i < n; i++){
+      const a = hash(tx + i, tz) * 6.28, r = 2.2 + hash(tx, tz + i) * 2.6;
       const x = tx + Math.cos(a) * r, z = tz + Math.sin(a) * r;
-      cells.push({ x, z, y: groundH(x, z), sy: 0.1, sx: 0.05, sz: 0.05, color: 0xd8d0c0 });
-      cells.push({ x, z, y: groundH(x, z) + 0.08, sy: 0.07, sx: 0.16, sz: 0.16, color: 0xb05848 });
+      const g = groundH(x, z);
+      if (g > 1.0) continue;
+      const s = 0.7 + hash(tx, i + 40) * 0.7;
+      cells.push({ x, z, y: g, sy: 0.1 * s, sx: 0.05 * s, sz: 0.05 * s, color: 0xd8d0c0 });
+      cells.push({ x, z, y: g + 0.08 * s, sy: 0.07 * s, sx: 0.16 * s, sz: 0.16 * s, color: hash(tx, i + 41) < 0.7 ? 0xb05848 : 0x8a5a3a });
     }
   }
   columns(cells, lamber(0xffffff), true);
@@ -56969,6 +57406,68 @@ function updateSeasons(dt){
     cells.push({ x, z, y: groundH(x, z) + 0.05, sy: d, sx: d, sz: 3 + hash(i,83) * 4, ry: hash(i,84) * 3, color: 0x5a4e3e });
   }
   columns(cells, lamber(0xffffff));
+}
+
+/* ---------- stumps (cut trees near clearings) ---------- */
+{
+  const cells = [];
+  for (let i = 0; i < 12; i++){
+    const a = hash(i, 150) * 6.28, r = 15 + hash(i, 151) * 100;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (groundH(x, z) > 1.5) continue;
+    const s = 0.8 + hash(i, 152) * 0.6;
+    cells.push({ x, z, y: groundH(x, z) - 0.12, sy: 0.55 * s, sx: 0.6 * s, sz: 0.6 * s, ry: hash(i, 153) * 3, color: 0x55483a });
+    cells.push({ x, z, y: groundH(x, z) + 0.55 * s - 0.04, sy: 0.08, sx: 0.62 * s, sz: 0.62 * s, ry: hash(i, 153) * 3, color: 0x8a7a5c });   /* light cut face on top */
+  }
+  columns(cells, lamber(0xffffff));
+}
+
+/* ---------- saplings: small seedlings scattered near the hero trees ---------- */
+{
+  const parents = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20], [-112, -8], [40, -28], [-56, -34], [74, -8]];
+  const cells = [];
+  for (let i = 0; i < parents.length; i++){
+    const [px, pz] = parents[i];
+    const n = 2 + Math.floor(hash(i, 160) * 2);
+    for (let k = 0; k < n; k++){
+      const a = hash(px + k, pz) * 6.28, r = 4.5 + hash(px, pz + k) * 6;
+      const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+      const g = groundH(x, z);
+      if (g > 1.2) continue;
+      const s = 0.5 + hash(px, k + 161) * 0.5;
+      cells.push({ x, z, y: g, sy: 0.9 * s, sx: 0.12, sz: 0.12, color: 0x5d5040 });
+      cells.push({ x, z, y: g + 0.9 * s - 0.18, sy: 0.55 * s, sx: 0.75 * s, sz: 0.75 * s, ry: hash(px, k + 162) * 3,
+        color: [0x5d7f46, 0x6b8f52, 0x678a4e][Math.floor(hash(px, k + 163) * 3)] });
+    }
+  }
+  const sap = columns(cells, lamber(0xffffff), true);
+  if (sap){ registerSeasonFoliage(sap, 'leaf'); tintFoliageNow(sap, 'leaf'); }
+}
+
+/* ---------- ferns: flat frond fans under the big trees ---------- */
+{
+  const cells = [];
+  const spots = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20], [130, 30], [104, 66]];
+  for (let si = 0; si < spots.length; si++){
+    const [px, pz] = spots[si];
+    const n = 3 + Math.floor(hash(si, 180) * 3);
+    for (let k = 0; k < n; k++){
+      const a = hash(px + k, pz) * 6.28, r = 3.5 + hash(px, pz + k) * 5;
+      const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+      const g = groundH(x, z);
+      if (g > 1.2) continue;
+      const s = 0.5 + hash(px, k + 181) * 0.4;
+      const ry = hash(px, k + 182) * 3;
+      for (let f = 0; f < 3; f++){
+        const fa = ry + f * 2.09 + 0.4;
+        cells.push({ x: x + Math.cos(fa) * 0.2, z: z + Math.sin(fa) * 0.2, y: g, sy: 0.06 * s, sx: 0.7 * s, sz: 0.16 * s,
+          ry: fa + Math.PI / 2, color: 0x4f6e3c });
+      }
+      cells.push({ x, z, y: g + 0.03, sy: 0.1 * s, sx: 0.2 * s, sz: 0.2 * s, color: 0x5d7a45 });
+    }
+  }
+  const fern = columns(cells, lamber(0xffffff), true);
+  if (fern){ registerSeasonFoliage(fern, 'leaf'); tintFoliageNow(fern, 'leaf'); }
 }
 
 /* ============================================================
@@ -58603,6 +59102,9 @@ function stepFrame(dt){
     lighthouse.beamG.visible = on > 0.03;
     lighthouse.light.intensity = on * 6;
   }
+  /* cathedral candle in the broken nave, flickering at night */
+  for (const L of CATH_LIGHTS) L.intensity = (1 - dayF) * (130 + Math.sin(tSim * 3.1) * 26);
+  if (CATH_FLAME_MAT) CATH_FLAME_MAT.emissiveIntensity = (1 - dayF) * (3.2 + Math.sin(tSim * 5.3) * 0.8);
   updateDeer(dt, dayF);
   updateFox(dt, dayF);
   updateSquirrels(dt, dayF);
