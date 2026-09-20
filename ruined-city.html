@@ -54715,6 +54715,8 @@ const MOSS_G = ['#6c8a4f','#78965a','#5d7a45','#86a062'].map(h => new THREE.Colo
 const IVY_G = ['#5f7f46','#6d8f50','#4f6e3c','#779a57'].map(h => new THREE.Color(h));
 const BARK = lamber(0x5d5040), BARK_D = lamber(0x4a4033);
 const LEAF_G = ['#5d7f46','#6b8f52','#527240','#7a9c5e','#678a4e'].map(h => lamber(h));
+const LEAF_C = ['#3d5a34','#466a3c','#35512c'].map(h => lamber(h));   /* conifer greens (darker, cooler) */
+const DEAD_WOOD = lamber(0x8a8074);   /* bleached dead-tree wood */
 const ASPHALT_D = new THREE.Color('#33342e'), ASPHALT_L = new THREE.Color('#6d6f66');
 const GRASS_D = new THREE.Color('#57693f'), GRASS_L = new THREE.Color('#9aa86f');
 const EARTH_C = new THREE.Color('#5d5748');
@@ -56588,6 +56590,8 @@ function tree(x, z, h, w, seed, baseY, dense){
   if (dense === undefined) dense = true;
   const g = new THREE.Group();
   const B = (a, b, c) => new THREE.BoxGeometry(a, b, c);
+  /* variant: 0 leafy, 1 conifer, 2 dead. Seeded so it's stable per tree. */
+  const kind = hash(seed, 900) < 0.12 ? 1 : hash(seed, 901) < 0.2 ? 2 : 0;
   /* trunk: two stacked tapered boxes */
   const t1 = new THREE.Mesh(B(w*1.35, h*0.55, w*1.25), BARK_D);
   t1.position.set(0, h*0.275, 0); t1.castShadow = true; g.add(t1);
@@ -56596,6 +56600,38 @@ function tree(x, z, h, w, seed, baseY, dense){
   t2.rotation.z = (hash(seed,13)-0.5)*0.06; t2.castShadow = true; g.add(t2);
   const rf = new THREE.Mesh(B(w*1.7, 0.35, w*1.6), BARK_D);
   rf.position.y = 0.15; rf.castShadow = true; g.add(rf);
+  if (kind === 1){
+    /* conifer: a tall cone of stacked leaf slabs, narrow, dark green */
+    const con = new THREE.Mesh(B(w*0.5, h*0.5, w*0.48), BARK);
+    con.position.set(0, h*0.5, 0); con.castShadow = true; g.add(con);
+    const layers = 5;
+    for (let i = 0; i < layers; i++){
+      const t = i / layers;
+      const lr = (w * 2.0) * (1 - t * 0.75);
+      const lh = h * 0.16;
+      const slab = new THREE.Mesh(B(lr, lh, lr * 0.9), LEAF_C[Math.floor(hash(seed, 40 + i) * 3)]);
+      slab.position.set((hash(seed,50+i)-0.5)*0.1, h*0.55 + t*h*0.42, (hash(seed,51+i)-0.5)*0.1);
+      slab.rotation.y = hash(seed, 52 + i) * 1.5;
+      slab.castShadow = true;
+      g.add(slab);
+    }
+  } else if (kind === 2){
+    /* dead tree: bare, leaning grey trunk + a few broken limbs, no canopy */
+    const dead = new THREE.Mesh(B(w*0.9, h*0.85, w*0.85), DEAD_WOOD);
+    dead.position.set(0, h*0.42, 0);
+    dead.rotation.z = (hash(seed, 60) - 0.5) * 0.3;
+    dead.castShadow = true; g.add(dead);
+    for (let i = 0; i < 4; i++){
+      const limb = new THREE.Mesh(B(w*0.7, h*0.3, w*0.6), DEAD_WOOD);
+      const a = (i / 4) * Math.PI * 2 + hash(seed, 61 + i) * 1.2;
+      const hy = h * (0.35 + hash(seed, 65 + i) * 0.4);
+      limb.position.set(Math.cos(a) * w * 0.9, hy, Math.sin(a) * w * 0.9);
+      limb.rotation.z = (hash(seed, 69 + i) - 0.5) * 1.4;
+      limb.rotation.y = a;
+      limb.castShadow = true;
+      g.add(limb);
+    }
+  } else {
   /* canopy: a low, wide cluster of leaf boxes */
   const cy = h * 0.8;
   const rc = h*0.22 + 0.7;
@@ -56613,6 +56649,7 @@ function tree(x, z, h, w, seed, baseY, dense){
   }
   const top = new THREE.Mesh(B(rc*0.7, 0.7, rc*0.65), LEAF_G[Math.floor(hash(seed,27)*5)]);
   top.position.set(0, cy + rc*0.55, 0); top.castShadow = true; g.add(top);
+  }
   g.position.set(x, (baseY !== undefined ? baseY : groundH(x, z)), z);
   g.rotation.y = (hash(seed,99)-0.5)*1.6;
   scene.add(g);
