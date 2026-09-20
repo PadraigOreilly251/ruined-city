@@ -450,36 +450,105 @@ function ruin(x, z, w, d, floors, seed){
   const dirt = new THREE.Color(0x87816f);
   const intact = Math.max(1, Math.floor(floors * (0.42 + 0.52 * hash(seed, 1))));
   const colA = concColor(seed, 0.16), colB = concColor(seed + 3, 0.2);
-  let wingF = intact, wingSide = 0;
+  let wingF = intact, wingSide = 0, wingSplit = 0;
+  let topMaxF = intact;
+  /* ragged sheared tops: tall buildings lose their top floors in ragged
+     staggered segments — rebar at the cuts, a slab dangling off one edge */
+  const shTall = intact >= 4 && hash(seed, 190) < 0.5;
+  let shWing = false;
+  const snowOn = hash(seed, 160) > 0.15;
+  function pushMass(cx, mW, mF, sM, colM, sh){
+    if (!sh || mF < 3){
+      cells.push({ x: cx, z, y: gY, sy: mF * FH, sx: mW, sz: d, color: colM });
+      if (snowOn) snowCells.push({ x: cx, z, y: gY + mF * FH + 0.34, sy: 0.14 + 0.1 * hash(sM, 161), sx: mW * 0.96, sz: d * 0.9 });
+      return mF;
+    }
+    const cut = 1 + (hash(sM, 191) > 0.5 ? 1 : 0);
+    const baseF = mF - cut;
+    cells.push({ x: cx, z, y: gY, sy: baseF * FH, sx: mW, sz: d, color: colM });
+    const nS = 2 + (hash(sM, 193) > 0.5 ? 1 : 0);
+    let t = 0, topF = 0;
+    for(let i = 0; i < nS; i++){
+      const sw = i === nS - 1 ? 1 - t : 0.3 + 0.45 * hash(sM, 200 + i);
+      const sf = 1 + Math.floor(hash(sM, 210 + i) * cut);
+      const sx0 = cx + (t + sw / 2 - 0.5) * mW;
+      cells.push({ x: sx0, z, y: gY + baseF * FH, sy: sf * FH, sx: mW * sw * 0.985, sz: d * 0.97,
+        color: concColor(sM + i * 13, 0.2) });
+      if (snowOn) snowCells.push({ x: sx0, z, y: gY + (baseF + sf) * FH + 0.28,
+        sy: 0.12 + 0.08 * hash(sM, 215 + i), sx: mW * sw * 0.9, sz: d * 0.85 });
+      topF = Math.max(topF, sf); t += sw;
+    }
+    for(let i = 0; i < 3; i++){
+      cells.push({ x: cx + (hash(sM+i, 230) - 0.5) * mW * 0.8, z: z + (hash(sM+i, 231) - 0.5) * d * 0.4,
+        y: gY + baseF * FH + 0.4, sy: 0.5 + hash(sM+i, 232) * 0.6, sx: 0.05, sz: 0.05,
+        rz: (hash(sM+i, 233) - 0.5) * 0.5, color: 0x4a4238 });
+    }
+    if (hash(sM, 240) > 0.55)
+      cells.push({ x: cx + (hash(sM, 241) - 0.5) * mW * 0.5, z: z - d / 2 - 0.2, y: gY + baseF * FH + 0.4,
+        sy: 0.25, sx: mW * 0.35, sz: 0.12, rx: -(0.2 + hash(sM, 242) * 0.3), color: concColor(sM + 31, 0.24) });
+    return baseF + topF;
+  }
   /* stepped silhouette: split footprint into a tall part and a lower wing */
   if (hash(seed, 30) < 0.5 && intact > 2){
     const side = hash(seed, 31) < 0.5 ? -1 : 1;
-    const split = 0.4 + 0.25 * hash(seed, 32);
-    const mw = w * (1 - split), wf = w * split;
+    wingSplit = 0.4 + 0.25 * hash(seed, 32);
+    const mw = w * (1 - wingSplit), wf = w * wingSplit;
     wingF = Math.max(1, intact - 1 - Math.floor(hash(seed, 33) * 3));
     wingSide = side;
-    cells.push({ x: x + side * mw / 2, z, y: gY, sy: intact * FH, sx: mw, sz: d, color: colA });
-    cells.push({ x: x - side * wf / 2, z, y: gY, sy: wingF * FH, sx: wf, sz: d, color: concColor(seed + 41, 0.15) });
-    if (hash(seed, 34) > 0.35) cells.push({ x: x - side * wf / 2, z, y: wingF * FH + gY + 0.16,
+    shWing = wingF >= 3 && hash(seed + 41, 190) < 0.4;
+    topMaxF = Math.max(pushMass(x + side * mw / 2, mw, intact, seed, colA, shTall),
+                       pushMass(x - side * wf / 2, wf, wingF, seed + 41, concColor(seed + 41, 0.15), shWing));
+    if (hash(seed, 34) > 0.35 && !shWing) cells.push({ x: x - side * wf / 2, z, y: wingF * FH + gY + 0.16,
       sy: 0.3, sx: wf * 1.03, sz: d * 0.92, color: concColor(seed + 42, 0.26).lerp(dirt, 0.4) });
-    if (hash(seed, 160) > 0.15){   /* most roofs hold a cap of snow */
-      snowCells.push({ x: x + side * mw / 2, z, y: gY + intact * FH + 0.36, sy: 0.14 + 0.1 * hash(seed, 161), sx: mw * 0.96, sz: d * 0.9 });
-      snowCells.push({ x: x - side * wf / 2, z, y: gY + wingF * FH + 0.26, sy: 0.12 + 0.08 * hash(seed, 162), sx: wf * 0.94, sz: d * 0.86 });
-    }
   } else {
-    cells.push({ x, z, y: gY, sy: intact * FH, sx: w, sz: d, color: colA });
-    if (hash(seed, 160) > 0.15)
-      snowCells.push({ x, z, y: gY + intact * FH + 0.36, sy: 0.14 + 0.1 * hash(seed, 161), sx: w * 0.96, sz: d * 0.9 });
+    topMaxF = pushMass(x, w, intact, seed, colA, shTall);
   }
-  /* windows on the two road-facing facades (only up to the lower wing height) */
+  /* windows: the tall mass keeps its upper-floor windows — only the low
+     wing stays blind; sheared tops drop their last (broken) floor's row */
   function winRow(xp, zc, len, y0, count, s2, ry, off, bid){
     facadeWindows(xp, zc, len, y0, count, s2, ry, off, bid);
   }
-  const wc = wingF;
-  winRow(x, z - d / 2, w, gY, wc, seed, 0, -0.05, seed);
-  winRow(x, z + d / 2, w, gY, wc, seed + 40, 0, 0.05, seed);
-  winRow(x - w / 2, z, d, gY, wc, seed + 80, Math.PI/2, -0.05, seed);
-  winRow(x + w / 2, z, d, gY, wc, seed + 120, Math.PI/2, 0.05, seed);
+  const fT = shTall ? intact - 1 : intact, fW = shWing ? wingF - 1 : wingF;
+  if (wingSide !== 0){
+    const mw = w * (1 - wingSplit), wf = w - mw;
+    winRow(x + wingSide * mw / 2, z - d / 2, mw, gY, fT, seed, 0, -0.05, seed);
+    winRow(x - wingSide * wf / 2, z - d / 2, wf, gY, fW, seed + 5, 0, -0.05, seed);
+    winRow(x + wingSide * mw / 2, z + d / 2, mw, gY, fT, seed + 40, 0, 0.05, seed);
+    winRow(x - wingSide * wf / 2, z + d / 2, wf, gY, fW, seed + 45, 0, 0.05, seed);
+    winRow(x + wingSide * mw, z, d, gY, fT, seed + 80, Math.PI/2, wingSide > 0 ? 0.05 : -0.05, seed);
+    winRow(x - wingSide * wf, z, d, gY, fW, seed + 120, Math.PI/2, wingSide > 0 ? -0.05 : 0.05, seed);
+  } else {
+    winRow(x, z - d / 2, w, gY, fT, seed, 0, -0.05, seed);
+    winRow(x, z + d / 2, w, gY, fT, seed + 40, 0, 0.05, seed);
+    winRow(x - w / 2, z, d, gY, fT, seed + 80, Math.PI/2, -0.05, seed);
+    winRow(x + w / 2, z, d, gY, fT, seed + 120, Math.PI/2, 0.05, seed);
+  }
+  /* facade decay: water-stain streaks + the occasional blown-out corner */
+  {
+    const nf = 3 + Math.floor(hash(seed, 250) * 3);
+    for(let i = 0; i < nf; i++){
+      const onZ = hash(seed + i, 251) > 0.5, side2 = hash(seed + i, 252) > 0.5 ? 1 : -1;
+      const tX = (hash(seed + i, 253) - 0.5) * w * 0.7, tZ = (hash(seed + i, 254) - 0.5) * d * 0.7;
+      const fY = 1 + Math.floor(hash(seed + i, 255) * Math.max(1, topMaxF - 1));
+      const streakCol = new THREE.Color(concColor(seed + i, 0.05)).lerp(new THREE.Color(0x6b5d4a), 0.65);
+      if (onZ) cells.push({ x: x + tX, z: z + side2 * (d / 2 + 0.045), y: gY + fY * FH - 0.1,
+        sy: 1.2 + hash(seed + i, 256) * 2.4, sx: 0.14 + hash(seed + i, 257) * 0.2, sz: 0.05, color: streakCol });
+      else cells.push({ x: x + side2 * (w / 2 + 0.045), z: z + tZ, y: gY + fY * FH - 0.1,
+        sy: 1.2 + hash(seed + i, 256) * 2.4, sx: 0.05, sz: 0.14 + hash(seed + i, 257) * 0.2, color: streakCol });
+    }
+    if (topMaxF >= 3 && hash(seed, 260) < 0.2){
+      const onZ = hash(seed, 261) > 0.5, side2 = hash(seed, 262) > 0.5 ? 1 : -1;
+      const bw = 2.2 + hash(seed, 263) * 2.2, bh = 3 + hash(seed, 264) * 4.5;
+      const bx0 = x + (hash(seed, 265) - 0.5) * w * 0.4, bz0 = z + (hash(seed, 266) - 0.5) * d * 0.4;
+      cells.push({ x: onZ ? bx0 : x + side2 * (w / 2 - 0.03), z: onZ ? z + side2 * (d / 2 - 0.03) : bz0,
+        y: gY + 0.4, sy: bh, sx: onZ ? bw : 0.08, sz: onZ ? 0.08 : bw, color: 0x17191d });
+      for(let i = 0; i < 3; i++)
+        rubbleCells.push({ x: (onZ ? bx0 : x + side2 * (w / 2)) + (hash(seed + i, 267) - 0.5) * bw,
+          z: (onZ ? z + side2 * (d / 2) : bz0) + (hash(seed + i, 268) - 0.5) * bw,
+          y: gY - 0.02, sy: 0.3 + hash(seed + i, 269) * 0.4, sx: 0.4 + hash(seed + i, 270) * 0.6, sz: 0.4 + hash(seed + i, 271) * 0.6,
+          ry: hash(seed + i, 272) * 3, color: concColor(seed + i * 9, 0.14) });
+    }
+  }
   /* street-level doorway + lintel, and the odd faded shop sign */
   {
     const onSide = hash(seed, 175) < 0.3;
@@ -495,13 +564,13 @@ function ruin(x, z, w, d, floors, seed){
         color: new THREE.Color(sc).lerp(new THREE.Color(0x6a6a60), 0.5) });
     }
   }
-  /* parapet lip */
-  if (hash(seed, 9) > 0.3) cells.push({ x, z, y: intact * FH + gY, sy: 0.35, sx: w * 1.02, sz: d * 1.02, color: concColor(seed+9, 0.3) });
+  /* parapet lip (only when the top isn't sheared open) */
+  if (hash(seed, 9) > 0.3 && !shTall) cells.push({ x, z, y: intact * FH + gY, sy: 0.35, sx: w * 1.02, sz: d * 1.02, color: concColor(seed+9, 0.3) });
   /* roof slabs (collapsed floors) */
   const ns = 3 + Math.floor(hash(seed, 10) * 4);
   for(let i = 0; i < ns; i++){
     cells.push({ x: x + (hash(seed+i, 11) - 0.5) * w * 0.8, z: z + (hash(seed+i, 12) - 0.5) * d * 0.8,
-      y: (intact + 0.1) * FH + gY + i * 0.22, sy: 0.3, sx: w * (0.3 + hash(seed+i,13) * 0.5), sz: d * (0.3 + hash(seed+i,14) * 0.5),
+      y: (topMaxF + 0.1) * FH + gY + i * 0.22, sy: 0.3, sx: w * (0.3 + hash(seed+i,13) * 0.5), sz: d * (0.3 + hash(seed+i,14) * 0.5),
       ry: (hash(seed+i,15) - 0.5) * 0.3, rx: (hash(seed+i,16) - 0.5) * 0.12,
       color: concColor(seed + i * 5, 0.24).lerp(dirt, 0.45) });
   }
@@ -509,21 +578,21 @@ function ruin(x, z, w, d, floors, seed){
   for(let i = 0; i < 4; i++){
     if (hash(seed, 17 + i) < 0.4) continue;
     cells.push({ x: x + (hash(seed+i, 18) - 0.5) * w, z: z + (hash(seed+i, 19) - 0.5) * d,
-      y: (intact + 0.2) * FH + gY, sy: 0.5 + hash(seed+i, 20) * 0.6, sx: 0.05, sz: 0.05,
+      y: (topMaxF + 0.2) * FH + gY, sy: 0.5 + hash(seed+i, 20) * 0.6, sx: 0.05, sz: 0.05,
       rz: (hash(seed+i,21) - 0.5) * 0.5, color: 0x4a4238 });
   }
   /* moss on lower facades */
   const nm = 2 + Math.floor(hash(seed, 22) * 4);
   for(let i = 0; i < nm; i++){
     cells.push({ x: x + (hash(seed+i, 23) - 0.5) * w * 0.9, z: z - d/2 - 0.04,
-      y: gY + 0.15 + hash(seed+i, 24) * intact * FH * 0.5,
+      y: gY + 0.15 + hash(seed+i, 24) * topMaxF * FH * 0.5,
       sy: 0.5 + hash(seed+i, 25) * 1.1, sx: 0.4 + hash(seed+i,26) * 0.7, sz: 0.09, color: MOSS_G[i % 4] });
   }
   /* ivy climbing one facade */
   if (hash(seed, 27) > 0.4){
     const iv = 0x000000;
     cells.push({ x: x + (hash(seed,28) - 0.5) * w * 0.6, z: z - d/2 - 0.06,
-      y: gY, sy: intact * FH * (0.5 + hash(seed,29) * 0.5), sx: w * 0.5, sz: 0.08,
+      y: gY, sy: topMaxF * FH * (0.5 + hash(seed,29) * 0.5), sx: w * 0.5, sz: 0.08,
       color: IVY_G[Math.floor(hash(seed, 30) * 4)] });
   }
   /* rubble at the base */
@@ -538,10 +607,10 @@ function ruin(x, z, w, d, floors, seed){
   columns(cells, lamber(0xffffff));
   /* roof tree if the top collapsed open */
   if (intact < floors && hash(seed, 36) > 0.4 && floors >= 4)
-    treeRoof(x + (hash(seed,37) - 0.5) * w * 0.4, z + (hash(seed,38) - 0.5) * d * 0.4, (intact + 0.3) * FH + gY, 3.2 + hash(seed,39) * 2.4, seed * 13);
+    treeRoof(x + (hash(seed,37) - 0.5) * w * 0.4, z + (hash(seed,38) - 0.5) * d * 0.4, (topMaxF + 0.3) * FH + gY, 3.2 + hash(seed,39) * 2.4, seed * 13);
   /* roof grass patch */
-  if (hash(seed, 40) > 0.35)
-    columns([{ x, z, y: intact * FH + gY + 0.36, sy: 0.12, sx: w * 0.7, sz: d * 0.7, color: MOSS_G[Math.floor(hash(seed,41)*4)] }], lamber(0xffffff));
+  if (hash(seed, 40) > 0.35 && !shTall)
+    columns([{ x, z, y: topMaxF * FH + gY + 0.36, sy: 0.12, sx: w * 0.7, sz: d * 0.7, color: MOSS_G[Math.floor(hash(seed,41)*4)] }], lamber(0xffffff));
   /* dark base: decades of road dust */
   columns([{ x, z, y: gY, sy: 1.2, sx: w + 0.1, sz: d + 0.1, color: concColor(seed, 0.06).lerp(new THREE.Color('#4c4840'), 0.5) }], lamber(0xffffff));
   /* hanging vines from the roofline */
@@ -549,7 +618,7 @@ function ruin(x, z, w, d, floors, seed){
   const vines = [];
   for(let i = 0; i < nv; i++){
     vines.push({ x: x + (hash(seed+i, 43) - 0.5) * w * 0.9, z: z - d/2 - 0.08,
-      y: intact * FH + gY, sy: 0.9 + hash(seed+i, 44) * 2.2, sx: 0.07, sz: 0.07,
+      y: topMaxF * FH + gY, sy: 0.9 + hash(seed+i, 44) * 2.2, sx: 0.07, sz: 0.07,
       color: IVY_G[Math.floor(hash(seed+i, 45) * 4)] });
   }
   if (vines.length) columns(vines, lamber(0xffffff));
@@ -574,19 +643,35 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   const blockCenters = [-60, -20, 20, 60];
   let seedBase = 1000;
   for(const bx of blockCenters) for(const bz of blockCenters){
-    const lotEmpty = hash(bx, bz) < 0.12;   /* some blocks are full rubble lots */
-    const nB = lotEmpty ? 0 : 2 + Math.floor(hash(bx + 3, bz + 9) * 3);
+    const lotEmpty = hash(bx, bz) < 0.05;   /* some blocks are full rubble lots */
+    const nB = lotEmpty ? 0 : 4 + Math.floor(hash(bx + 3, bz + 9) * 4);
+    const placed = [];
     for(let i = 0; i < nB; i++){
-      const w = 7 + hash(bx + i, bz) * 8;
-      const d = 7 + hash(bx, bz + i) * 8;
-      const px = bx + (hash(bx * 2 + i, bz * 3) - 0.5) * (34 - w) * 0.85;
-      const pz = bz + (hash(bx * 3, bz * 2 + i) - 0.5) * (34 - d) * 0.85;
+      const w = 4 + hash(bx + i, bz) * 6;
+      const d = 4 + hash(bx, bz + i) * 6;
+      const px = bx + (hash(bx * 2 + i, bz * 3) - 0.5) * (34 - w) * 0.98;
+      const pz = bz + (hash(bx * 3, bz * 2 + i) - 0.5) * (34 - d) * 0.98;
       const nearRoad = Math.min(Math.abs(px), Math.abs(pz - 40), Math.abs(pz + 40), Math.abs(pz)) ;
       seedBase++;
       if (inClearZone(px, pz)) continue;   /* reserve for a hand-placed landmark */
+      if (placed.some(b => Math.abs(px - b.x) < (w + b.w) / 2 + 0.8 && Math.abs(pz - b.z) < (d + b.d) / 2 + 0.8)) continue;  /* no overlaps */
       const floors = 3 + Math.floor(hash(px, pz) * 6 * clamp01(1.9 - Math.hypot(px, pz) / 100)); /* taller toward centre */
       ruin(px, pz, w, d, Math.min(9, Math.max(3, floors)), seedBase);
       BLOCKS.push({ x: px, z: pz, w, d });
+      placed.push({ x: px, z: pz, w, d });
+    }
+    /* attached outbuilding: a shed huddled against one of the block's buildings */
+    if (!lotEmpty && placed.length && hash(bx + 5, bz + 6) > 0.5){
+      const b = placed[Math.floor(hash(bx + 19, bz + 23) * placed.length)];
+      const aw = 3 + hash(bx + 11, bz + 12) * 3, ad = 3 + hash(bx + 13, bz + 14) * 3;
+      const onX = hash(bx + 31, bz + 37) > 0.5, out = hash(bx + 33, bz + 39) > 0.5 ? 1 : -1;
+      const ax = onX ? b.x + out * (b.w / 2 + 0.4 + aw / 2) : b.x + (hash(bx + 41, bz) - 0.5) * (b.w - aw);
+      const az = onX ? b.z + (hash(bx + 43, bz + 47) - 0.5) * (b.d - ad) : b.z + out * (b.d / 2 + 0.4 + ad / 2);
+      if (!inClearZone(ax, az) && !placed.some(o => o !== b && Math.abs(ax - o.x) < (aw + o.w) / 2 + 0.5 && Math.abs(az - o.z) < (ad + o.d) / 2 + 0.5)){
+        seedBase++;
+        ruin(ax, az, aw, ad, 2, seedBase);
+        BLOCKS.push({ x: ax, z: az, w: aw, d: ad });
+      }
     }
     if (lotEmpty){
       /* rubble lot with a big tree */
@@ -603,6 +688,8 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   /* a couple of extra tall towers near the centre */
   ruin(-8, -52, 11, 10, 9, 501); BLOCKS.push({ x: -8, z: -52, w: 11, d: 10 });
   ruin(52, 8, 10, 12, 8, 502);  BLOCKS.push({ x: 52, z: 8, w: 10, d: 12 });
+  ruin(-52, 38, 10, 10, 9, 503); BLOCKS.push({ x: -52, z: 38, w: 10, d: 10 });
+  ruin(38, -50, 12, 9, 8, 504);  BLOCKS.push({ x: 38, z: -50, w: 12, d: 9 });
 }
 
 /* ============================================================
@@ -791,16 +878,18 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   const wGeo = new THREE.PlaneGeometry(0.95, 1.4);
   const m = new THREE.InstancedMesh(wGeo, new THREE.MeshLambertMaterial({ color: 0x2f3338, side: THREE.DoubleSide }), winQuads.length);
   const mat = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(1,1,1), q = new THREE.Quaternion(), e = new THREE.Euler();
-  /* lit windows — the odd one out: ~5% of buildings get exactly ONE, on a lower
-     floor. A hint of someone in the ruins; the rest of the city stays dark. */
-  const litMap = new Map();
+  /* lit windows — the odd one out: ~5% of buildings (at least one) get
+     exactly ONE lit window, on a lower floor. A hint of someone in the
+     ruins; the rest of the city stays dark. */
+  const cand = new Map();   /* building seed -> best candidate window */
   winQuads.forEach(w => {
     if (w.broken || !w.bid || w.y > 11.5) return;
-    if (hash(w.bid, 791) > 0.05) return;
-    const h = hash(w.seed, 792), cur = litMap.get(w.bid);
-    if (!cur || h < cur.h) litMap.set(w.bid, { w, h });
+    const h = hash(w.seed, 792), cur = cand.get(w.bid);
+    if (!cur || h < cur.h) cand.set(w.bid, { w, h });
   });
-  const litSet = new Set([...litMap.values()].map(o => o.w));
+  const byBid = [...cand.entries()].sort((a, b) => hash(a[0], 791) - hash(b[0], 791));
+  const K = Math.max(1, Math.round(byBid.length * 0.05));
+  const litSet = new Set(byBid.slice(0, K).map(o => o[1].w));
   const lit = [];
   winQuads.forEach((w, i) => {
     p.set(w.x, w.y, w.z);
@@ -822,7 +911,8 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
     lm.setMatrixAt(i, mat);
     lm.setColorAt(i, tmpC.set([0xffd9a0, 0xffe8c0, 0xffc888, 0xffd090][Math.floor(hash(w.seed, 8) * 4)]));
   });
-  lm.instanceMatrix.needsUpdate = true; lm.instanceColor.needsUpdate = true;
+  lm.instanceMatrix.needsUpdate = true;
+  if (lm.instanceColor) lm.instanceColor.needsUpdate = true;
   lm.renderOrder = 2;
   scene.add(lm);
   litWinMat = lm.material;
