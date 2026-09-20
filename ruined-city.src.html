@@ -3048,7 +3048,11 @@ function faceYaw(x, z){ return Math.atan2(camera.position.x - x, camera.position
 const deerList = [];
 function makeDeer(x, z, scale, seed, graze){
   const g = new THREE.Group();
-  const FUR = lamber(0x9a7d5a), FUR_D = lamber(0x6e5840);
+  /* per-animal color jitter (like buildings) so each deer reads individually */
+  const hue = hash(seed, 700);
+  const furC = new THREE.Color(0x9a7d5a).offsetHSL((hue-0.5)*0.03, (hue-0.5)*0.14, (hash(seed,701)-0.5)*0.18);
+  const furD = furC.clone().multiplyScalar(0.72);
+  const FUR = lamber(furC.getHex()), FUR_D = lamber(furD.getHex());
   const body = new THREE.Mesh(B(0.44*scale, 0.38*scale, 0.95*scale), FUR);
   body.position.y = 0.62*scale; body.castShadow = true; g.add(body);
   const legs = [];
@@ -3069,7 +3073,9 @@ function makeDeer(x, z, scale, seed, graze){
     const eye = new THREE.Mesh(B(0.032*scale, 0.032*scale, 0.02*scale), eyeM);
     eye.position.set(s*0.055*scale, 0.045*scale, 0.245*scale); head.add(eye);
   }
-  if (scale > 0.8){
+  /* buck/doe split: antlers only on bucks (~half the adults, seeded) */
+  const isBuck = scale > 0.8 && hash(seed, 702) < 0.5;
+  if (isBuck){
     for(const s of [-1, 1]){
       const an = new THREE.Mesh(B(0.04*scale, 0.34*scale, 0.04*scale), FUR_D);
       an.position.set(s*0.09*scale, 0.2*scale, 0.02*scale); an.rotation.z = s*0.3; head.add(an);
@@ -3190,9 +3196,12 @@ function updateDeer(dt, dayF){
 
 /* ---------- fox (dusk/night, bounding along streets) ---------- */
 const foxes = [];
-function makeFox(){
+function makeFox(seed){
+  if (seed === undefined) seed = 1;
   const g = new THREE.Group();
-  const F = lamber(0xb06a3a), F_D = lamber(0x8a4e28), CREAM = lamber(0xd8c8a8);
+  const hue = hash(seed, 710);
+  const fc = new THREE.Color(0xb06a3a).offsetHSL((hue-0.5)*0.03, (hue-0.5)*0.14, (hash(seed,711)-0.5)*0.15);
+  const F = lamber(fc.getHex()), F_D = lamber(fc.clone().multiplyScalar(0.72).getHex()), CREAM = lamber(0xd8c8a8);
   const body = new THREE.Mesh(B(0.5, 0.3, 0.9), F); body.position.y = 0.5; body.castShadow = true; g.add(body);
   const legs = [];
   for(const [lx, lz] of [[-0.14,-0.3],[0.14,-0.3],[-0.14,0.3],[0.14,0.3]]){
@@ -3226,10 +3235,10 @@ function makeFox(){
   NIGHT_ANIMALS.push(a);
   return a;
 }
-const fox = makeFox();
+const fox = makeFox(701);
 /* second fox: own route on the other side of town, different pace */
 {
-  const f2 = makeFox();
+  const f2 = makeFox(702);
   f2.speed = 2.7;
   f2.t = 6;
   f2.phase = Math.random() * 6.28;
@@ -3415,7 +3424,9 @@ function updateSquirrels(dt, dayF){
 /* ---------- rabbits (meadow) ---------- */
 function makeRabbit(x, z, seed){
   const g = new THREE.Group();
-  const F = lamber(0xb0a898), F_D = lamber(0x8a8274);
+  const hue = hash(seed, 720);
+  const fc = new THREE.Color(0xb0a898).offsetHSL((hue-0.5)*0.03, (hue-0.5)*0.16, (hash(seed,721)-0.5)*0.16);
+  const F = lamber(fc.getHex()), F_D = lamber(fc.clone().multiplyScalar(0.78).getHex());
   const body = new THREE.Mesh(B(0.3, 0.22, 0.44), F); body.position.y = 0.2; body.castShadow = true; g.add(body);
   const head = new THREE.Group(); head.position.set(0, 0.28, 0.24);
   const skull = new THREE.Mesh(B(0.14, 0.13, 0.14), F); head.add(skull);
