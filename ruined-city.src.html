@@ -3013,6 +3013,7 @@ function makeFox(){
     waypoints: [[0, -70], [12, -40], [12, -12], [-20, -12], [-20, 30], [14, 30], [14, 60], [40, 60], [40, 20], [-52, 44], [-30, -66], [0, -70]] };
   a.wi = 0;
   a.j = null;   /* T2: per-outing jittered waypoints */
+  a.chase = 0; a.chaseT = 0;   /* T2b: organic rabbit-chase (0 idle, else seconds left) */
   foxes.push(a);
   NIGHT_ANIMALS.push(a);
   return a;
@@ -3078,7 +3079,42 @@ function updateFox(dt, dayF){
       a.dir = Math.atan2(a.j[a.wi][0] - a.g.position.x, a.j[a.wi][1] - a.g.position.z);
     }
   } else {   /* trot */
-    if (pd < 18){ a.state = 'stare'; a.t = 1.5 + Math.random() * 2.5; }
+    /* T2b: organic rabbit-chase — a fox spots a rabbit and dashes at it;
+       the rabbit bolts, the fox gives up after a few seconds. Distinct from
+       the scripted T4 hunt (which owns the fox). */
+    if (a.chaseT <= 0 && !(a === hunt.fox && hunt.phase > 0)){
+      for(const r of rabbits){
+        if (r.g.scale.x < 0.5 || r.state === 'bolt') continue;
+        const rd = Math.hypot(r.g.position.x - a.g.position.x, r.g.position.z - a.g.position.z);
+        if (rd < 9){ a.chase = r; a.chaseT = 3.5 + Math.random() * 2; break; }
+      }
+    }
+    if (a.chase && a.chaseT > 0){
+      a.chaseT -= dt;
+      const r = a.chase;
+      const rx = r.g.position.x, rz = r.g.position.z;
+      const ddx = rx - a.g.position.x, ddz = rz - a.g.position.z;
+      const dd = Math.hypot(ddx, ddz) || 1;
+      a.dir = Math.atan2(ddx, ddz);
+      /* the rabbit bolts away from the fox the moment it's close */
+      if (dd < 6 && r.state !== 'bolt'){
+        r.state = 'bolt'; r.t = 2.2; r.dir = Math.atan2(a.g.position.x - rx, a.g.position.z - rz);
+        if ((r.thumpT || 0) <= 0){ rabbitThump(clamp01(1 - dd / 40) * 0.4); r.thumpT = 2.5; }
+      }
+      const sp = 5.2;   /* faster than a trot */
+      const step = tSim * 11;
+      const hop = Math.abs(Math.sin(step));
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.1;
+      a.g.position.x += Math.sin(a.dir) * sp * dt;
+      a.g.position.z += Math.cos(a.dir) * sp * dt;
+      a.g.rotation.y = a.dir;
+      a.g.rotation.x = Math.sin(step) * 0.07;
+      const swing = Math.sin(step) * 0.8;
+      a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+      a.tail.rotation.x = 0.3;
+      a.head.rotation.y = 0;
+      if (a.chaseT <= 0 || dd < 1.4 || dd > 16){ a.chase = null; a.chaseT = 0; a.state = 'den'; a.t = 2; }
+    } else if (pd < 18){ a.state = 'stare'; a.t = 1.5 + Math.random() * 2.5; }
     else if (dist < 2.5 || a.t <= 0){
       a.wi = (a.wi + 1) % a.waypoints.length;
       a.state = 'den';
@@ -3408,7 +3444,7 @@ function makeBird(cx, cz, rx, rz, h, speed, ph, s, flapRate, col){
   const head = new THREE.Mesh(B(0.1*s, 0.09*s, 0.14*s), mat); head.position.set(0, 0.04*s, 0.28*s); g.add(head);
   scene.add(g);
   const a = { g, wl, wr, head, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 3, flapRate, state: 'loop', t: 0,
-    driftPh: ph + Math.random() * 3, driftSp: 0.035 + Math.random() * 0.035 };   /* T2: the loop drifts */
+    driftPh: ph + Math.random() * 3, driftSp: 0.035 + Math.random() * 0.035, scare: 0 };   /* T2: the loop drifts; scare = hawk-evasion 0..1 */
   birds.push(a);
   ALWAYS_ANIMALS.push(a);
   return a;
@@ -3425,6 +3461,12 @@ makeBird(-30, -20, 14, 18, 9, 0.58, 4.7, 0.55, 16, 0x2a2e34);
 /* the hawk: wide slow circle */
 const hawk = makeBird(0, 0, 70, 70, 44, 0.07, 0.4, 1.5, 2.2, 0x4a3e30);
 hawk.flapRate = 2.2;
+/* T2b: the hawk stoops — every ~20–30 s it dives from its high circle down
+   through the crow/starlings flock and climbs back, scattering them. */
+hawk.stoop = 0;          /* 0 idle, >0 diving progress, -1..0 climb-back progress */
+hawk.stoopT = 14 + Math.random() * 10;
+hawk.stoopFrom = null;   /* {x,y,z} where the dive started */
+hawk.stoopTo = null;     /* {x,y,z} target near the flock */
 /* T3: one crow perches on the broken church spire tip; the perch swaps every 80–140 s */
 const perch = { bird: null, t: 0, transit: 0, from: null, pos: { x: -57.2, y: 26.9, z: 43.4 } };
 function updateBirds(dt, dayF){
@@ -3436,6 +3478,9 @@ function updateBirds(dt, dayF){
     perch.transit = 0;
     perch.t = 80 + Math.random() * 60;
   }
+  /* hawk position once per frame — smaller birds evade it when it circles near */
+  const hawkUp = hawk.g.scale.x > 0.5;   /* hawk is airborne (not roosting) */
+  const hpx = hawk.g.position.x, hpz = hawk.g.position.z;
   for(const b of birds){
     const isHawk = b === hawk;   /* identity — the old speed<0.1 check caught the negative-speed crows too */
     const isStarling = b.flapRate > 12;
@@ -3468,6 +3513,50 @@ function updateBirds(dt, dayF){
       continue;
     }
     b.ph += b.speed * dt;
+    /* T2b: hawk stoop — dive toward the flock, then climb back to its circle */
+    if (isHawk){
+      if (hawk.stoop <= 0 && hawk.stoopT > 0) hawk.stoopT -= dt;
+      if (hawk.stoopT <= 0 && hawk.stoop <= 0 && hawk.stoop > -0.2){
+        /* pick a target: the current flock centroid, low */
+        let fx = 0, fz = 0, fn = 0;
+        for (const b of birds) if (b !== hawk && b.g.scale.x > 0.5){ fx += b.g.position.x; fz += b.g.position.z; fn++; }
+        if (fn){
+          hawk.stoopFrom = { x: hawk.g.position.x, y: hawk.g.position.y, z: hawk.g.position.z };
+          hawk.stoopTo = { x: fx / fn + (Math.random() - 0.5) * 8, y: 14 + Math.random() * 6, z: fz / fn + (Math.random() - 0.5) * 8 };
+          hawk.stoop = 0.0001;
+        } else hawk.stoopT = 10;
+      }
+      if (hawk.stoop > 0){
+        hawk.stoop += dt / 1.1;
+        const e = hawk.stoop >= 1 ? 1 : hawk.stoop * hawk.stoop * (3 - 2 * hawk.stoop);
+        hawk.g.position.set(
+          hawk.stoopFrom.x + (hawk.stoopTo.x - hawk.stoopFrom.x) * e,
+          hawk.stoopFrom.y + (hawk.stoopTo.y - hawk.stoopFrom.y) * e,
+          hawk.stoopFrom.z + (hawk.stoopTo.z - hawk.stoopFrom.z) * e);
+        hawk.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
+        const flap = Math.sin(tSim * b.flapRate + b.flapPh);
+        hawk.wl.rotation.y = flap * 0.9; hawk.wr.rotation.y = -flap * 0.9;
+        hawk.g.rotation.z = Math.sin(tSim * 2) * 0.15;
+        if (hawk.stoop >= 1){ hawk.stoop = -0.0001; hawk.stoopFrom = { x: hawk.g.position.x, y: hawk.g.position.y, z: hawk.g.position.z }; }
+        continue;
+      }
+      if (hawk.stoop < 0){
+        hawk.stoop -= dt / 1.6;
+        const e = hawk.stoop <= -1 ? 1 : hawk.stoop * hawk.stoop * (3 - 2 * hawk.stoop);
+        /* climb back to the circle centre height */
+        const cx2 = hawk.cx + Math.cos(hawk.ph) * hawk.rx * (1 + 0.15 * Math.sin(tSim * hawk.driftSp + hawk.driftPh));
+        const cz2 = hawk.cz + Math.sin(hawk.ph) * hawk.rz * (1 + 0.15 * Math.sin(tSim * hawk.driftSp + hawk.driftPh));
+        hawk.g.position.set(
+          hawk.stoopFrom.x + (cx2 - hawk.stoopFrom.x) * e,
+          hawk.stoopFrom.y + (hawk.h - hawk.stoopFrom.y) * e,
+          hawk.stoopFrom.z + (cz2 - hawk.stoopFrom.z) * e);
+        hawk.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
+        const flap = Math.sin(tSim * b.flapRate + b.flapPh);
+        hawk.wl.rotation.y = flap * 0.8; hawk.wr.rotation.y = -flap * 0.8;
+        if (hawk.stoop <= -1){ hawk.stoop = 0; hawk.stoopT = 20 + Math.random() * 14; }
+        continue;
+      }
+    }
     /* T2: slow per-bird drift — never the same circle twice */
     const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
     const x = b.cx + Math.cos(b.ph) * b.rx * dm;
@@ -3479,6 +3568,24 @@ function updateBirds(dt, dayF){
     b.wl.rotation.y = flap * 0.75;
     b.wr.rotation.y = -flap * 0.75;
     b.g.rotation.z = isHawk ? Math.sin(b.ph) * 0.12 : 0;
+    /* T2b: hawk-scatter — when the hawk circles within ~12u of a smaller
+       bird, the bird dives away from the hawk's line, then drifts back. */
+    if (!isHawk && hawkUp){
+      const hd = Math.hypot(b.g.position.x - hpx, b.g.position.z - hpz);
+      if (hd < 14) b.scare = Math.min(1, b.scare + dt * 3.2);
+      else b.scare = Math.max(0, b.scare - dt * 0.8);
+      if (b.scare > 0.02){
+        /* veer: push the bird's loop position away from the hawk, and drop it low */
+        const ax = b.g.position.x - hpx, az = b.g.position.z - hpz;
+        const al = Math.hypot(ax, az) || 1;
+        b.g.position.x += (ax / al) * b.scare * 6 * dt * 6;
+        b.g.position.z += (az / al) * b.scare * 6 * dt * 6;
+        b.g.position.y -= b.scare * 2.5 * dt * 4;
+        b.g.rotation.z = b.scare * 0.5 * Math.sin(tSim * 9 + b.flapPh);   /* panicked tilt */
+        b.wl.rotation.y = flap * (0.75 + b.scare * 0.5);
+        b.wr.rotation.y = -flap * (0.75 + b.scare * 0.5);
+      }
+    } else if (!isHawk) b.scare = Math.max(0, b.scare - dt * 0.8);
   }
 }
 
