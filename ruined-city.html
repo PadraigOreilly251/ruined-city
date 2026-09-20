@@ -57104,9 +57104,18 @@ function updateWeather(dt){
   /* lightning */
   if (wxName === 'storm' && wx.rain > 0.6){
     nextFlash -= dt;
-    if (nextFlash <= 0){ stormFlash = 1; nextFlash = 2.5 + Math.random() * 9; }
+    if (nextFlash <= 0){ stormFlash = 1; fireBolt(); nextFlash = 2.5 + Math.random() * 9; }
   }
   stormFlash = Math.max(0, stormFlash - dt * 5);
+  /* the bolt flickers hard for a few frames then fades */
+  if (boltLife > 0){
+    boltLife -= dt;
+    /* bright at the start, strobing a couple of times, then gone */
+    const p = clamp01(boltLife / 0.24);
+    const strobe = 0.55 + 0.45 * Math.sin(boltLife * 55);
+    bolt.material.opacity = 0.95 * strobe * p;
+    if (boltLife <= 0) bolt.visible = false;
+  }
 }
 
 /* ---------- clouds (two instanced sets: fair + storm) ---------- */
@@ -57146,6 +57155,49 @@ function updateClouds(dt){
     });
     mesh.instanceMatrix.needsUpdate = true;
   }
+}
+
+/* ---------- lightning bolt: a jagged additive quad that flickers for a few frames ---------- */
+const bolt = (() => {
+  /* build one jagged bolt in the Y-Z plane; the mesh is re-oriented per strike */
+  const seg = 9;
+  const verts = [];
+  let y = 0, z = 0, dx = 0;
+  for (let i = 0; i <= seg; i++){
+    const t = i / seg;
+    verts.push([dx, -t * 60, z]);
+    /* random sideways jitter for the next segment */
+    dx = (hash(i * 3 + 1, 71) - 0.5) * 9 * (1 - t * 0.7);
+    z = (hash(i * 3 + 2, 73) - 0.5) * 4;
+  }
+  /* build a thick ribbon (two triangles per segment) */
+  const pos = [];
+  for (let i = 0; i < seg; i++){
+    const a = verts[i], b = verts[i + 1];
+    const w = 1.6;
+    pos.push(a[0] - w, a[1], a[2],  a[0] + w, a[1], a[2],  b[0] + w, b[1], b[2]);
+    pos.push(a[0] - w, a[1], a[2],  b[0] + w, b[1], b[2],  b[0] - w, b[1], b[2]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color: 0xf2f6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+  }));
+  m.visible = false;
+  m.renderOrder = 3;
+  scene.add(m);
+  return m;
+})();
+let boltLife = 0;
+function fireBolt(){
+  /* a bolt from a random storm cloud down to the ground, near the view */
+  const tx = controls.target.x + (Math.random() - 0.5) * 60;
+  const tz = controls.target.z + (Math.random() - 0.5) * 60;
+  bolt.position.set(tx, 62, tz);
+  bolt.rotation.z = Math.atan2(controls.target.x - tx, 40);   /* lean toward the view */
+  bolt.rotation.x = (Math.random() - 0.5) * 0.3;
+  boltLife = 0.22;   /* ~5 frames */
+  bolt.visible = true;
 }
 
 /* ---------- rain ---------- */
@@ -58429,6 +58481,8 @@ function animate(){
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
 window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
+window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt now */
+window.__RC_BOLT_MESH__ = bolt;   /* debug: inspect the bolt mesh */
 window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2]; window._hunt = hunt;
 window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
 window._perch = perch;
