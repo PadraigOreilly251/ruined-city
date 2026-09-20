@@ -2190,6 +2190,22 @@ function tree(x, z, h, w, seed, baseY, dense){
   t2.rotation.z = (hash(seed,13)-0.5)*0.06; t2.castShadow = true; g.add(t2);
   const rf = new THREE.Mesh(B(w*1.7, 0.35, w*1.6), BARK_D);
   rf.position.y = 0.15; rf.castShadow = true; g.add(rf);
+  /* root flare: widens the base so the trunk stops reading as a column */
+  const rf2 = new THREE.Mesh(B(w*2.2, 0.6, w*2.0), BARK_D);
+  rf2.position.y = 0.05; rf2.castShadow = true; g.add(rf2);
+  if (h >= 6 && kind === 0){
+    /* low limbs on big trees: a few stubby, sloping boughs (thin, drooping — not bars) */
+    const nl = 2 + Math.floor(hash(seed, 70) * 2);
+    for (let i = 0; i < nl; i++){
+      const a = (i / nl) * Math.PI * 2 + hash(seed, 71 + i) * 1.6;
+      const limb = new THREE.Mesh(B(w*0.8, h*0.05, w*0.32), BARK);
+      const ly = h * (0.3 + hash(seed, 75 + i) * 0.22);
+      limb.position.set(Math.cos(a) * w*0.75, ly, Math.sin(a) * w*0.75);
+      limb.rotation.y = -a;
+      limb.rotation.z = (hash(seed, 79 + i) - 0.5) * 0.7 + (hash(seed, 80 + i) < 0.5 ? 0.3 : -0.3);
+      limb.castShadow = true; g.add(limb);
+    }
+  }
   if (kind === 1){
     /* conifer: a tall cone of stacked leaf slabs, narrow, dark green */
     const con = new THREE.Mesh(B(w*0.5, h*0.5, w*0.48), BARK);
@@ -2310,6 +2326,8 @@ function treeRoof(x, z, baseY, h, seed){
       trunkCells.push({ x, z, y: h, sy: 4.4 * s, sx: 0.55 * s, sz: 0.55 * s, rz: (hash(tries, 45) - 0.5) * 0.12, color: 0x8a8177 });
       trunkCells.push({ x: x + 0.3 * s, z, y: h + 3.6 * s, sy: 1.2 * s, sx: 0.3 * s, sz: 0.3 * s,
         rz: (hash(tries, 46) - 0.5) * 0.6, color: 0x8a8177 });
+      trunkCells.push({ x: x - 0.35 * s, z: z + 0.15 * s, y: h + 2.9 * s, sy: 0.9 * s, sx: 0.26 * s, sz: 0.26 * s,
+        rz: (hash(tries, 47) - 0.5) * 0.9, color: 0x8a8177 });
     }
     placed++;
   }
@@ -2344,55 +2362,107 @@ function treeRoof(x, z, baseY, h, seed){
     const a = hash(i, 31) * 6.28, r = 8 + hash(i, 32) * 130;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     if (groundH(x, z) > 1.5) continue;
-    const flat = hash(i, 60) < 0.35;   /* some low and wide, some tall and narrow */
+    const kind = hash(i, 60);   /* 0 low+wide, 1 lumpy round, 2 tall+narrow */
     const s = 0.5 + hash(i, 33) * 0.9;
-    if (flat){
+    const col = () => BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)];
+    if (kind < 0.35){
       /* low shrub: capped width (was up to ~3.4 — read as a toy block) + a lumpy offset top box */
       const w1 = 0.8 + hash(i, 62) * 0.9, d1 = 0.7 + hash(i, 63) * 0.8;
       cells.push({ x, z, y: groundH(x, z), sy: 0.4 + hash(i, 61) * 0.35, sx: w1, sz: d1,
-        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+        ry: hash(i, 34) * 3, color: col() });
       cells.push({ x: x + (hash(i, 71) - 0.5) * w1 * 0.5, z: z + (hash(i, 72) - 0.5) * d1 * 0.5,
         y: groundH(x, z) + 0.26, sy: 0.3 + hash(i, 73) * 0.3, sx: w1 * 0.55, sz: d1 * 0.55,
         ry: hash(i, 34) * 3 + 0.5, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
+    } else if (kind < 0.75){
+      /* lumpy round bush: three offset boxes, no single-block silhouette */
+      const w1 = s * 0.9;
+      cells.push({ x, z, y: groundH(x, z), sy: s * 0.62, sx: w1, sz: w1 * 0.92, ry: hash(i, 34) * 3, color: col() });
+      cells.push({ x: x + w1 * 0.34, z: z - w1 * 0.2, y: groundH(x, z) + 0.3 * s, sy: s * 0.45, sx: w1 * 0.62, sz: w1 * 0.55,
+        ry: hash(i, 34) * 3 + 0.7, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
+      cells.push({ x: x - w1 * 0.3, z: z + w1 * 0.28, y: groundH(x, z) + 0.22 * s, sy: s * 0.38, sx: w1 * 0.5, sz: w1 * 0.45,
+        ry: hash(i, 34) * 3 + 1.3, color: col() });
     } else {
+      /* tall narrow shrub: two stacked boxes, slightly offset */
       cells.push({ x, z, y: groundH(x, z),
         sy: s * (0.8 + hash(i, 61) * 0.9), sx: s * 0.9, sz: s * 0.8,
-        ry: hash(i, 34) * 3, color: BUSH_COLS[Math.floor(hash(i, 35) * BUSH_COLS.length)] });
+        ry: hash(i, 34) * 3, color: col() });
+      cells.push({ x: x + s * 0.25, z: z + s * 0.15, y: groundH(x, z) + s * 0.55,
+        sy: s * 0.5, sx: s * 0.55, sz: s * 0.5,
+        ry: hash(i, 34) * 3 + 0.9, color: BUSH_COLS[Math.floor(hash(i, 74) * BUSH_COLS.length)] });
     }
   }
   const bushMesh = columns(cells, lamber(0xffffff));
   if (bushMesh) registerSeasonFoliage(bushMesh, 'bush');
 }
 
-/* ---------- grass tufts: clustered instanced, gentle sway ---------- */
+/* merge a list of box specs {x,y,z,px,py,pz,ry,rz} into one indexed geometry (base of each box at py) */
+function mergeClump(specs){
+  const pos = [], norm = [], uv = [], idx = [];
+  let off = 0;
+  for (const s of specs){
+    const g = new THREE.BoxGeometry(s.x, s.y, s.z);
+    g.translate(0, s.y / 2, 0);                       /* base at origin → tilt pivots at ground */
+    if (s.ry) g.rotateY(s.ry);
+    if (s.rz) g.rotateZ(s.rz);
+    g.translate(s.px || 0, s.py || 0, s.pz || 0);
+    const p = g.attributes.position, n = g.attributes.normal, u = g.attributes.uv, ix = g.index;
+    for (let i = 0; i < p.count; i++){
+      pos.push(p.getX(i), p.getY(i), p.getZ(i));
+      norm.push(n.getX(i), n.getY(i), n.getZ(i));
+      uv.push(u.getX(i), u.getY(i));
+    }
+    for (let i = 0; i < ix.count; i++) idx.push(ix.getX(i) + off);
+    off += p.count;
+    g.dispose();
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(norm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/* ---------- grass tufts: clustered instanced clumps, gentle sway ---------- */
 const grassClusters = [];
 {
-  const tuftGeo = new THREE.BoxGeometry(0.07, 0.3, 0.07);
-  tuftGeo.translate(0, 0.15, 0);
+  /* a clump = 4 blades of differing height/lean, merged into one geometry (tallest blade 1.0) */
+  const tuftGeo = mergeClump([
+    { x: 0.06,  y: 1.0,  z: 0.06,  px: 0,    pz: 0,    rz: 0.02 },
+    { x: 0.05,  y: 0.82, z: 0.05,  px: 0.07, pz: 0.02, rz: 0.30 },
+    { x: 0.05,  y: 0.76, z: 0.05,  px: -0.06,pz: -0.03,rz: -0.28 },
+    { x: 0.045, y: 0.6,  z: 0.045, px: 0.02, pz: -0.05,ry: 0.8,  rz: -0.42 },
+  ]);
+  const GRASS_COLS = [0x6f8a4e, 0x7d9a58, 0x85a061, 0x67814a];
   const m2 = new THREE.MeshLambertMaterial({ color: 0xffffff });
   const zones = [];
   for(let i = 0; i < 16; i++) zones.push([ (hash(i, 41) - 0.5) * 240, (hash(i, 42) - 0.5) * 240 ]);
   for(const [zx, zz] of zones){
     const cells = [];
-    for(let i = 0; i < 130; i++){
-      const x = zx + (hash(i, 43 + zx) - 0.5) * 46, z = zz + (hash(i, 44 + zz) - 0.5) * 46;
+    for(let i = 0; i < 260; i++){
+      /* 4 blades share one clump anchor → tufts read as clumps, not even pickets */
+      const clump = (i >> 2), b = i & 3;
+      const ax = zx + (hash(clump, 200 + zx) - 0.5) * 46, az = zz + (hash(clump, 201 + zz) - 0.5) * 46;
+      const x = ax + (hash(i, 43 + zx) - 0.5) * 1.0, z = az + (hash(i, 44 + zz) - 0.5) * 1.0;
       const h = groundH(x, z);
       if (h > 1.6) continue;
       if (Math.abs(x) < 5.2 && Math.abs(z) < 5.2) continue;
-      cells.push({ x, z, y: h, sy: 0.7 + hash(i, 45) * 0.9, sx: 1, sz: 1, ry: hash(i, 46) * 3,
-        color: hash(i, 47) < 0.5 ? 0x6f8a4e : 0x7d9a58 });
+      cells.push({ x, z, y: h, sy: 0.5 + hash(i, 45) * 0.45, sx: 1, sz: 1, ry: hash(i, 46) * 3,
+        tiltX: (hash(i, 49 + b) - 0.5) * 0.18, tiltZ: (hash(i, 50 + b) - 0.5) * 0.18,
+        color: GRASS_COLS[Math.floor(hash(i, 47) * GRASS_COLS.length)] });
     }
     if (!cells.length) continue;
     const mesh = new THREE.InstancedMesh(tuftGeo, m2, cells.length);
     const m = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
     cells.forEach((c, i) => {
-      p.set(c.x, c.y, c.z);
-      e.set(0, c.ry, 0); q.setFromEuler(e);
+      p.set(c.x - zx, c.y, c.z - zz);      /* cluster-local: sway pivots on the clump, no sliding */
+      e.set(c.tiltX, c.ry, c.tiltZ); q.setFromEuler(e);
       s.set(c.sx, c.sy, c.sz);
       m.compose(p, q, s);
       mesh.setMatrixAt(i, m);
       mesh.setColorAt(i, tmpC.set(c.color));
     });
+    mesh.position.set(zx, 0, zz);
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceColor.needsUpdate = true;
     mesh.castShadow = true;
@@ -2420,6 +2490,24 @@ function registerSeasonFoliage(mesh, kind){
   const n = mesh.count;
   const base = new Float32Array(ic.array.slice(0, n * 3));
   seasonFoliage.push({ mesh, n, base, from: new Float32Array(base), to: new Float32Array(base), kind });
+}
+/* apply the current season tint to a just-registered mesh (for veg added after a #day snap) */
+function tintFoliageNow(mesh, kind){
+  if (season === 0) return;
+  const f = seasonFoliage[seasonFoliage.length - 1];
+  if (!f || f.mesh !== mesh) return;
+  const str = SEASON_MIX_STR[season];
+  const tc = SEASON_COLORS[kind][season];
+  for (let i = 0; i < f.n; i++){
+    const j = i * 3;
+    f.to[j]   = f.base[j]   + (tc.r - f.base[j])   * str;
+    f.to[j+1] = f.base[j+1] + (tc.g - f.base[j+1]) * str;
+    f.to[j+2] = f.base[j+2] + (tc.b - f.base[j+2]) * str;
+  }
+  const arr = f.mesh.instanceColor.array;
+  for (let i = 0; i < f.n * 3; i++) arr[i] = f.to[i];
+  f.mesh.instanceColor.needsUpdate = true;
+  f.from.set(f.to);
 }
 function applySeasonColors(){
   seasonPrev = season;
@@ -2477,33 +2565,117 @@ function updateSeasons(dt){
   }
 }
 
-/* ---------- wildflowers (meadow + road cracks) ---------- */
+/* ---------- wildflowers (meadow + road cracks) — clumped, not uniformly scattered ---------- */
 {
   const cells = [];
   const FLOWER_C = [0xd8d2c2, 0xc8a0b8, 0xe0c060, 0xb8c8e0, 0xd08878];
-  for(let i = 0; i < 320; i++){
-    let x, z;
-    if (i < 240){ x = -90 - hash(i, 61) * 45; z = -70 + hash(i, 62) * 140; }   /* west meadow */
-    else { x = (hash(i, 63) - 0.5) * 170; z = (hash(i, 64) - 0.5) * 170;
-      const road = Math.min(Math.abs(x), Math.abs(z)); if (road > 4) continue; }
-    if (groundH(x, z) > 1.2) continue;
-    const c = FLOWER_C[Math.floor(hash(i, 65) * 5)];
-    cells.push({ x, z, y: groundH(x, z), sy: 0.26 + hash(i,66) * 0.2, sx: 0.05, sz: 0.05, color: 0x5d7f46 });
-    cells.push({ x, z, y: groundH(x, z) + 0.2, sy: 0.12, sx: 0.14, sz: 0.14, color: c });
+  const centers = [];
+  for (let i = 0; i < 40; i++){   /* meadow clump centres */
+    centers.push([-92 - hash(i, 61) * 42, -65 + hash(i, 62) * 130]);
+  }
+  for (let i = 0; i < 14; i++){   /* road-crack clumps: along the main grid roads */
+    const line = [0, 40, -40, 80, -80][Math.floor(hash(i, 170) * 5)];
+    const along = (hash(i, 171) - 0.5) * 150;
+    const vert = hash(i, 172) < 0.5;
+    const x = vert ? line : along, z = vert ? along : line;
+    if (groundH(x, z) > 0.5) continue;
+    if (Math.abs(z) < 12 && Math.abs(x - BRIDGE_X) < 12) continue;   /* not on the bridge */
+    centers.push([x + (hash(i, 173) - 0.5) * 4, z + (hash(i, 174) - 0.5) * 4]);
+  }
+  for (let ci = 0; ci < centers.length; ci++){
+    const [cx, cz] = centers[ci];
+    const n = 4 + Math.floor(hash(ci, 67) * 6);
+    const pal = FLOWER_C[Math.floor(hash(ci, 175) * 5)];   /* each clump leans on one colour */
+    for (let j = 0; j < n; j++){
+      const x = cx + (hash(ci * 31 + j, 68) - 0.5) * 3.6, z = cz + (hash(ci * 31 + j, 69) - 0.5) * 3.6;
+      if (groundH(x, z) > 1.2) continue;
+      const g = groundH(x, z);
+      const c = hash(ci, 176 + j) < 0.75 ? pal : FLOWER_C[Math.floor(hash(ci * 7 + j, 65) * 5)];
+      cells.push({ x, z, y: g, sy: 0.26 + hash(ci * 13 + j, 66) * 0.2, sx: 0.05, sz: 0.05, color: 0x5d7f46 });
+      cells.push({ x, z, y: g + 0.2, sy: 0.12, sx: 0.14, sz: 0.14, color: c });
+    }
   }
   const flowers = columns(cells, lamber(0xffffff), true);
   if (flowers){ flowerMeshes.push(flowers); flowers.visible = season !== 3; }   /* respect a snapped winter start */
 }
 
+/* ---------- shoreline life: reeds, cattails, shore grass, rocks (river + lake) ---------- */
+{
+  const cells = [];
+  const REED = [0x5d7a3a, 0x6b8a45, 0x4f6e34];
+  /* river banks */
+  for (let i = 0; i < 220; i++){
+    const z = -95 + hash(i, 91) * 250;
+    const cx = riverX(z), hw = waterHalfWidth(z);
+    const side = hash(i, 92) < 0.5 ? -1 : 1;
+    const x = cx + side * (hw + 0.35 + hash(i, 93) * 1.6);
+    const g = groundH(x, z);
+    if (g > 0.9 || g < -0.4) continue;
+    const r = hash(i, 94);
+    if (r < 0.42){
+      /* reed: tall thin blade, slight lean */
+      const hgt = 0.9 + hash(i, 95) * 0.8;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 96) * 3, color: REED[i % 3] });
+    } else if (r < 0.62){
+      /* cattail: reed + brown spike head */
+      const hgt = 1.0 + hash(i, 95) * 0.7;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 96) * 3, color: 0x5d7a3a });
+      cells.push({ x, z, y: g + hgt - 0.14, sy: 0.3, sx: 0.09, sz: 0.09, ry: hash(i, 96) * 3, color: 0x6a4a2e });
+    } else if (r < 0.85){
+      /* shore grass: short tuft blades */
+      for (let b = 0; b < 3; b++){
+        const ox = (hash(i, 100 + b) - 0.5) * 0.5, oz = (hash(i, 103 + b) - 0.5) * 0.5;
+        cells.push({ x: x + ox, z: z + oz, y: groundH(x + ox, z + oz), sy: 0.3 + hash(i, 106 + b) * 0.3, sx: 0.05, sz: 0.05, ry: hash(i, 109 + b) * 3, color: REED[(i + b) % 3] });
+      }
+    } else {
+      /* rock: grey, half-sunk */
+      const s = 0.35 + hash(i, 112) * 0.6;
+      cells.push({ x, z, y: g - 0.08, sy: s * 0.7, sx: s, sz: s * 0.8, ry: hash(i, 113) * 3, color: hash(i, 114) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
+    }
+  }
+  /* lake shore ring */
+  for (let i = 0; i < 260; i++){
+    const a = hash(i, 120) * 6.283;
+    const f = 1.01 + hash(i, 121) * 0.16;
+    const x = LAKE_CX + Math.cos(a) * LAKE_RX * f, z = LAKE_CZ + Math.sin(a) * LAKE_RZ * f;
+    const g = groundH(x, z);
+    if (g > 1.2 || g < WATER_Y + 0.15) continue;
+    const r = hash(i, 122);
+    if (r < 0.45){
+      const hgt = 0.9 + hash(i, 123) * 0.8;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 124) * 3, color: REED[i % 3] });
+    } else if (r < 0.65){
+      const hgt = 1.0 + hash(i, 123) * 0.7;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 124) * 3, color: 0x5d7a3a });
+      cells.push({ x, z, y: g + hgt - 0.14, sy: 0.3, sx: 0.09, sz: 0.09, ry: hash(i, 124) * 3, color: 0x6a4a2e });
+    } else if (r < 0.88){
+      for (let b = 0; b < 3; b++){
+        const ox = (hash(i, 130 + b) - 0.5) * 0.5, oz = (hash(i, 133 + b) - 0.5) * 0.5;
+        cells.push({ x: x + ox, z: z + oz, y: groundH(x + ox, z + oz), sy: 0.3 + hash(i, 136 + b) * 0.3, sx: 0.05, sz: 0.05, ry: hash(i, 139 + b) * 3, color: REED[(i + b) % 3] });
+      }
+    } else {
+      const s = 0.4 + hash(i, 142) * 0.7;
+      cells.push({ x, z, y: g - 0.08, sy: s * 0.7, sx: s, sz: s * 0.8, ry: hash(i, 143) * 3, color: hash(i, 144) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
+    }
+  }
+  const shoreMesh = columns(cells, lamber(0xffffff), true);
+  if (shoreMesh){ registerSeasonFoliage(shoreMesh, 'grass'); tintFoliageNow(shoreMesh, 'grass'); }   /* reeds tint with the seasons */
+}
+
 /* ---------- mushrooms under the big trees ---------- */
 {
   const cells = [];
-  for(const [tx, tz] of [[-108, 10], [1000+0, 0]]){ if (tx === 1000) continue;
-    for(let i = 0; i < 7; i++){
-      const a = hash(tx + i, tz) * 6.28, r = 2.4 + hash(tx, tz + i) * 3;
+  const spots = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20]];
+  for (const [tx, tz] of spots){
+    const n = 5 + Math.floor(hash(tx, tz) * 3);
+    for (let i = 0; i < n; i++){
+      const a = hash(tx + i, tz) * 6.28, r = 2.2 + hash(tx, tz + i) * 2.6;
       const x = tx + Math.cos(a) * r, z = tz + Math.sin(a) * r;
-      cells.push({ x, z, y: groundH(x, z), sy: 0.1, sx: 0.05, sz: 0.05, color: 0xd8d0c0 });
-      cells.push({ x, z, y: groundH(x, z) + 0.08, sy: 0.07, sx: 0.16, sz: 0.16, color: 0xb05848 });
+      const g = groundH(x, z);
+      if (g > 1.0) continue;
+      const s = 0.7 + hash(tx, i + 40) * 0.7;
+      cells.push({ x, z, y: g, sy: 0.1 * s, sx: 0.05 * s, sz: 0.05 * s, color: 0xd8d0c0 });
+      cells.push({ x, z, y: g + 0.08 * s, sy: 0.07 * s, sx: 0.16 * s, sz: 0.16 * s, color: hash(tx, i + 41) < 0.7 ? 0xb05848 : 0x8a5a3a });
     }
   }
   columns(cells, lamber(0xffffff), true);
@@ -2520,6 +2692,68 @@ function updateSeasons(dt){
     cells.push({ x, z, y: groundH(x, z) + 0.05, sy: d, sx: d, sz: 3 + hash(i,83) * 4, ry: hash(i,84) * 3, color: 0x5a4e3e });
   }
   columns(cells, lamber(0xffffff));
+}
+
+/* ---------- stumps (cut trees near clearings) ---------- */
+{
+  const cells = [];
+  for (let i = 0; i < 12; i++){
+    const a = hash(i, 150) * 6.28, r = 15 + hash(i, 151) * 100;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    if (groundH(x, z) > 1.5) continue;
+    const s = 0.8 + hash(i, 152) * 0.6;
+    cells.push({ x, z, y: groundH(x, z) - 0.12, sy: 0.55 * s, sx: 0.6 * s, sz: 0.6 * s, ry: hash(i, 153) * 3, color: 0x55483a });
+    cells.push({ x, z, y: groundH(x, z) + 0.55 * s - 0.04, sy: 0.08, sx: 0.62 * s, sz: 0.62 * s, ry: hash(i, 153) * 3, color: 0x8a7a5c });   /* light cut face on top */
+  }
+  columns(cells, lamber(0xffffff));
+}
+
+/* ---------- saplings: small seedlings scattered near the hero trees ---------- */
+{
+  const parents = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20], [-112, -8], [40, -28], [-56, -34], [74, -8]];
+  const cells = [];
+  for (let i = 0; i < parents.length; i++){
+    const [px, pz] = parents[i];
+    const n = 2 + Math.floor(hash(i, 160) * 2);
+    for (let k = 0; k < n; k++){
+      const a = hash(px + k, pz) * 6.28, r = 4.5 + hash(px, pz + k) * 6;
+      const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+      const g = groundH(x, z);
+      if (g > 1.2) continue;
+      const s = 0.5 + hash(px, k + 161) * 0.5;
+      cells.push({ x, z, y: g, sy: 0.9 * s, sx: 0.12, sz: 0.12, color: 0x5d5040 });
+      cells.push({ x, z, y: g + 0.9 * s - 0.18, sy: 0.55 * s, sx: 0.75 * s, sz: 0.75 * s, ry: hash(px, k + 162) * 3,
+        color: [0x5d7f46, 0x6b8f52, 0x678a4e][Math.floor(hash(px, k + 163) * 3)] });
+    }
+  }
+  const sap = columns(cells, lamber(0xffffff), true);
+  if (sap){ registerSeasonFoliage(sap, 'leaf'); tintFoliageNow(sap, 'leaf'); }
+}
+
+/* ---------- ferns: flat frond fans under the big trees ---------- */
+{
+  const cells = [];
+  const spots = [[-108, 10], [-6, 30], [-72, 12], [66, 52], [-30, 58], [-100, 20], [130, 30], [104, 66]];
+  for (let si = 0; si < spots.length; si++){
+    const [px, pz] = spots[si];
+    const n = 3 + Math.floor(hash(si, 180) * 3);
+    for (let k = 0; k < n; k++){
+      const a = hash(px + k, pz) * 6.28, r = 3.5 + hash(px, pz + k) * 5;
+      const x = px + Math.cos(a) * r, z = pz + Math.sin(a) * r;
+      const g = groundH(x, z);
+      if (g > 1.2) continue;
+      const s = 0.5 + hash(px, k + 181) * 0.4;
+      const ry = hash(px, k + 182) * 3;
+      for (let f = 0; f < 3; f++){
+        const fa = ry + f * 2.09 + 0.4;
+        cells.push({ x: x + Math.cos(fa) * 0.2, z: z + Math.sin(fa) * 0.2, y: g, sy: 0.06 * s, sx: 0.7 * s, sz: 0.16 * s,
+          ry: fa + Math.PI / 2, color: 0x4f6e3c });
+      }
+      cells.push({ x, z, y: g + 0.03, sy: 0.1 * s, sx: 0.2 * s, sz: 0.2 * s, color: 0x5d7a45 });
+    }
+  }
+  const fern = columns(cells, lamber(0xffffff), true);
+  if (fern){ registerSeasonFoliage(fern, 'leaf'); tintFoliageNow(fern, 'leaf'); }
 }
 
 /* ============================================================
