@@ -54918,11 +54918,16 @@ function facadeWindows(xp, zc, len, y0, floors, seed, ry, off, bid){
     if (hash(xp*3 + i*7 + f*13, zc*5 + seed) < 0.5) continue;   /* wall instead of window */
     const t = (i + 0.5) / per;
     const brk = hash(xp*9 + i*3 + f*11, zc*2 + seed) < 0.3;
+    /* T3: a few ground-floor openings become storefronts (taller, framed);
+       some broken windows get boarded over (planks). Both are rare, seeded. */
+    const store = (f === 0) && hash(seed + i*31, xp*7) < 0.14;
+    const boarded = brk && hash(seed + i*17, zc*3) < 0.22;
     winQuads.push({
       x: ry === 0 ? xp + (t - 0.5) * len * 0.86 : xp + off,
       y: y0 + f * 3.1 + 1.55,
       z: ry === 0 ? zc + off : zc + (t - 0.5) * len * 0.86,
-      ry, broken: brk, seed: seed + i + f, ox: ry === 0 ? 0 : off, oz: ry === 0 ? off : 0, bid: bid || 0
+      ry, broken: brk, seed: seed + i + f, ox: ry === 0 ? 0 : off, oz: ry === 0 ? off : 0, bid: bid || 0,
+      store, boarded
     });
   }
 }
@@ -55409,17 +55414,74 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   const K = Math.max(1, Math.round(byBid.length * 0.05));
   const litSet = new Set(byBid.slice(0, K).map(o => o[1].w));
   const lit = [];
+  const boards = [];   /* boarded-over broken windows: planks */
+  const sills = [];    /* ledge boxes under each window */
+  const stores = [];   /* storefront: taller framed glass on the ground floor */
   winQuads.forEach((w, i) => {
     p.set(w.x, w.y, w.z);
     e.set(0, w.ry, 0); q.setFromEuler(e);
     mat.compose(p, q, s);
     m.setMatrixAt(i, mat);
-    m.setColorAt(i, tmpC.set(w.broken ? 0x5a5e63 : 0x2f3338));
+    /* broken = a dark hole (missing glass -> black interior), NOT a light pane */
+    m.setColorAt(i, tmpC.set(w.store ? 0x1c2a30 : w.broken ? 0x0b0d0f : 0x2f3338));
     if (litSet.has(w)) lit.push(w);
+    if (w.boarded) boards.push(w);
+    /* a sill under every non-storefront window */
+    if (!w.store && !w.broken) sills.push(w);
+    if (w.store) stores.push(w);
   });
   m.instanceMatrix.needsUpdate = true;
   m.instanceColor.needsUpdate = true;
   scene.add(m);
+  /* window sills: a thin ledge protruding below each window */
+  if (sills.length){
+    const sillGeo = new THREE.BoxGeometry(1.1, 0.1, 0.22);
+    const sm = new THREE.InstancedMesh(sillGeo, new THREE.MeshLambertMaterial({ color: 0x8a8578 }), sills.length);
+    sills.forEach((w, i) => {
+      p.set(w.x + w.ox * 0.5, w.y - 0.72, w.z + w.oz * 0.5);
+      e.set(0, w.ry, 0); q.setFromEuler(e);
+      mat.compose(p, q, s);
+      sm.setMatrixAt(i, mat);
+    });
+    sm.instanceMatrix.needsUpdate = true;
+    scene.add(sm);
+  }
+  /* boarded windows: a few horizontal planks over the opening */
+  if (boards.length){
+    const bGeo = new THREE.BoxGeometry(1.0, 0.18, 0.08);
+    const bm = new THREE.InstancedMesh(bGeo, new THREE.MeshLambertMaterial({ color: 0x6b5638 }), boards.length * 3);
+    let bi = 0;
+    boards.forEach(w => {
+      for (let k = -1; k <= 1; k++){
+        p.set(w.x + w.ox * 0.12, w.y + k * 0.42, w.z + w.oz * 0.12);
+        e.set(0, w.ry, 0); q.setFromEuler(e);
+        mat.compose(p, q, s);
+        bm.setMatrixAt(bi++, mat);
+      }
+    });
+    bm.instanceMatrix.needsUpdate = true;
+    scene.add(bm);
+  }
+  /* storefronts: a wider framed glass + a weathered sign band above */
+  if (stores.length){
+    const fGeo = new THREE.PlaneGeometry(2.2, 2.2);
+    const fm = new THREE.InstancedMesh(fGeo, new THREE.MeshLambertMaterial({ color: 0x22333c, side: THREE.DoubleSide }), stores.length);
+    const signGeo = new THREE.BoxGeometry(2.3, 0.34, 0.12);
+    const sg = new THREE.InstancedMesh(signGeo, new THREE.MeshLambertMaterial({ color: 0x7a6a4a }), stores.length);
+    stores.forEach((w, i) => {
+      p.set(w.x + w.ox * 0.5, w.y - 0.2, w.z + w.oz * 0.5);
+      e.set(0, w.ry, 0); q.setFromEuler(e);
+      mat.compose(p, q, s);
+      fm.setMatrixAt(i, mat);
+      p.set(w.x + w.ox * 0.5, w.y + 1.35, w.z + w.oz * 0.5);
+      e.set(0, w.ry, 0); q.setFromEuler(e);
+      mat.compose(p, q, s);
+      sg.setMatrixAt(i, mat);
+    });
+    fm.instanceMatrix.needsUpdate = true;
+    sg.instanceMatrix.needsUpdate = true;
+    scene.add(fm); scene.add(sg);
+  }
   /* lit windows that glow after dark */
   const lm = new THREE.InstancedMesh(wGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }), Math.max(1, lit.length));
   lit.forEach((w, i) => {
