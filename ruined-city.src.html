@@ -329,6 +329,75 @@ scene.add(snowGround);
 const snowMats = [snowGroundMat];   /* every snowy surface; opacity driven by weather + season */
 const snowMeshes = [snowGround];
 
+/* ---------- wet ground: rain darkens + saturates the earth and roads ---------- */
+/* The base ground is baked once with vertex colours; on rain we multiply the
+   whole ground's colour down (dark wet earth) and add puddles + splash rings.
+   We keep the baked colour array so we can restore it as the rain fades. */
+const groundBaseCols = new Float32Array(groundGeo.attributes.color.array);   /* copy of the baked colours */
+const wetGround = new THREE.Mesh(groundGeo, new THREE.MeshLambertMaterial({
+  vertexColors: true, transparent: true, opacity: 0, depthWrite: false,
+  polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+wetGround.renderOrder = 1;
+wetGround.visible = false;
+wetGround.receiveShadow = true;
+scene.add(wetGround);
+/* wet ground uses the SAME vertex colours but the material lerps toward a dark,
+   saturated wet tone as opacity rises — dark roads, darker grass, richer earth. */
+const WET_TINT = new THREE.Color(0x2e3438);
+const groundColArr = groundGeo.attributes.color.array;
+function applyWetGround(wet){   /* wet 0..1 */
+  const a = groundColArr, b = groundBaseCols;
+  for (let i = 0; i < a.length; i += 3){
+    a[i]   = b[i]   * (1 - wet * 0.55);
+    a[i+1] = b[i+1] * (1 - wet * 0.55);
+    a[i+2] = b[i+2] * (1 - wet * 0.55);
+  }
+  groundGeo.attributes.color.needsUpdate = true;
+}
+/* puddles: flat reflective discs in the road dips + low ground, appear when wet */
+const puddles = [];
+const puddleMat = new THREE.MeshBasicMaterial({ color: 0x6f7d84, transparent: true, opacity: 0, depthWrite: false });
+{
+  const pg = new THREE.CircleGeometry(1, 18);
+  const spots = [];
+  /* along the road grid — dip the centreline where the ground is lowest */
+  for (let x = -80; x <= 80; x += 40) for (let z = -80; z <= 80; z += 40){
+    if (hash(x, z) < 0.25) continue;
+    const gx = x + (hash(x+7, z) - 0.5) * 8, gz = z + (hash(x, z+7) - 0.5) * 8;
+    spots.push([gx, gz, 1.4 + hash(x+13, z) * 2.4]);
+  }
+  /* meadow hollows */
+  for (let i = 0; i < 10; i++){
+    const gx = -150 + hash(i, 401) * 70, gz = -30 + hash(i, 402) * 70;
+    spots.push([gx, gz, 1.8 + hash(i, 403) * 2.6]);
+  }
+  for (const [gx, gz, gs] of spots){
+    const gy = groundH(gx, gz);
+    const p = new THREE.Mesh(pg, puddleMat);
+    p.rotation.x = -Math.PI / 2;
+    p.position.set(gx, gy + 0.03, gz);
+    p.scale.set(gs, gs * (0.5 + hash(gx, gz) * 0.4), 1);
+    p.renderOrder = 2;
+    p.visible = false;
+    scene.add(p);
+    puddles.push(p);
+  }
+}
+/* rain-splash rings: a handful of expanding circles on the wet ground */
+const splashes = [];
+const splashMat = new THREE.MeshBasicMaterial({ color: 0xbfd0d8, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide });
+{
+  const sg = new THREE.RingGeometry(0.05, 0.09, 12);
+  for (let i = 0; i < 26; i++){
+    const s = new THREE.Mesh(sg, splashMat);
+    s.rotation.x = -Math.PI / 2;
+    s.renderOrder = 3;
+    s.visible = false;
+    scene.add(s);
+    splashes.push({ m: s, ph: Math.random() * 6.28, life: 0 });
+  }
+}
+
 /* ---------- river + lake water: a ribbon following the shoreline ---------- */
 const waterRows = [];
 for (let z = -334; z <= 330; z += 3){
@@ -2423,6 +2492,32 @@ function updateDayNight(dt){
     const snowAmt = Math.max(wx.snow, seasonMix.winter * 0.18);
     for (const m of snowMats) m.opacity = snowAmt * 0.9;
     for (const m of snowMeshes) m.visible = snowAmt > 0.02;
+  }
+  /* wet ground: rain darkens + saturates, puddles + splash rings appear */
+  {
+    const wet = clamp01(wx.rain);
+    wetGround.visible = wet > 0.02;
+    wetGround.material.opacity = wet * 0.85;
+    applyWetGround(wet * 0.85);   /* darken the baked ground colours by the rain amount */
+    puddleMat.opacity = wet * 0.9;
+    for (const p of puddles) p.visible = wet > 0.05;
+    splashMat.opacity = wet * 0.7;
+    /* splash rings pop and expand on the wet ground, mostly near the wanderer */
+    for (const s of splashes){
+      s.life -= dt;
+      if (s.life <= 0 && wet > 0.2 && Math.random() < 0.12){
+        s.life = 0.5 + Math.random() * 0.3;
+        const ax = controls.target.x + (Math.random() - 0.5) * 24;
+        const az = controls.target.z + (Math.random() - 0.5) * 24;
+        s.m.position.set(ax, groundH(ax, az) + 0.04, az);
+      }
+      if (s.life > 0){
+        s.m.visible = true;
+        const t = 1 - s.life / 0.8;   /* 0..1 across its life */
+        s.m.scale.setScalar(0.4 + t * 2.2);
+        s.m.material.opacity = wet * 0.7 * (1 - t);
+      } else s.m.visible = false;
+    }
   }
   /* HUD: brighten the title text once night falls */
   const nUi = nightF > 0.45;
