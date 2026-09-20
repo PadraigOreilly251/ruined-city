@@ -139,6 +139,7 @@ const lamber = c => new THREE.MeshLambertMaterial({ color: c });
 const tmpC = new THREE.Color();
 const tmpC2 = new THREE.Color();
 let nightFNow = 1;   /* current night factor (0 day … 1 night) — set by updateDayNight */
+let dayFNow = 0;     /* current day factor (0 night … 1 day) — set by updateDayNight */
 function columns(cells, material, noShadow){
   if (!cells.length) return null;
   const mesh = new THREE.InstancedMesh(boxGeo, material, cells.length);
@@ -2503,6 +2504,7 @@ function updateDayNight(dt){
   const dayF = clamp01((elev + 0.08) * 4);         /* 0 night, 1 full day */
   const nightF = 1 - dayF;
   nightFNow = nightF;
+  dayFNow = dayF;
   /* sun light */
   const sd = 70;
   sun.position.set(controls.target.x + Math.cos(azim) * sd * 0.8, Math.max(6, elev * sd), controls.target.z + Math.sin(azim) * sd * 0.5);
@@ -2749,6 +2751,61 @@ function fireBolt(){
   bolt.rotation.x = (Math.random() - 0.5) * 0.3;
   boltLife = 0.22;   /* ~5 frames */
   bolt.visible = true;
+}
+
+/* ---------- low ground mist: soft camera-facing puffs hugging the earth ---------- */
+/* The reference's real subject was a ground fog bank; ours was thin. These are
+   a set of soft radial sprites (always camera-facing) hovering just above the
+   meadow/roads that fade in with fog, rain, and the dawn/dusk cool, and drift
+   slowly on the wind. Camera-facing means they read as mist from any angle,
+   never as flat gray rugs. */
+const mists = [];
+let mistMat;
+{
+  /* a soft radial-alpha texture for the mist puff */
+  const cnv = document.createElement('canvas'); cnv.width = cnv.height = 128;
+  const ctx = cnv.getContext('2d');
+  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(255,255,255,0.85)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.4)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(cnv);
+  mistMat = new THREE.SpriteMaterial({ map: tex, color: 0xdfe2e8, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  /* scatter puffs over the meadow + along the streets, at a low height */
+  const spots = [];
+  for (let i = 0; i < 34; i++){
+    const west = i < 22;
+    const x = west ? -150 + hash(i, 501) * 70 : -60 + hash(i, 502) * 120;
+    const z = west ? -30 + hash(i, 503) * 62 : -60 + hash(i, 504) * 120;
+    spots.push([x, z, 10 + hash(i, 505) * 12]);
+  }
+  for (const [x, z, sc] of spots){
+    const m = new THREE.Sprite(mistMat);
+    m.position.set(x, groundH(x, z) + 2.4 + hash(x, z) * 1.6, z);
+    m.scale.set(sc, sc * 0.7, 1);
+    m.renderOrder = 1;
+    m.visible = false;
+    scene.add(m);
+    mists.push({ m, ph: hash(x + 9, z) * 6.28, base: m.scale.x, sp: 0.15 + hash(z, x + 4) * 0.25 });
+  }
+}
+/* mist opacity driver: fog/rain weather + dawn/dusk cool, gentle drift */
+function updateMist(dt){
+  const cool = clamp01((0.5 - Math.abs(dayFNow - 0.42)) * 2.4) * 0.35;   /* dawn/dusk */
+  const wxFog = clamp01(1 - wx.fogF) * 0.75;                          /* fog + rain/storm */
+  const amt = clamp01(wxFog + cool);
+  mistMat.opacity = amt * 0.5;
+  const vis = amt > 0.04;
+  for (const s of mists){
+    s.m.visible = vis;
+    if (!vis) continue;
+    const wob = 1 + 0.09 * Math.sin(tSim * 0.4 + s.ph);
+    s.m.scale.set(s.base * wob, s.base * 0.7 * wob, 1);
+    s.m.position.x += Math.sin(tSim * 0.2 + s.ph) * s.sp * dt * 3;
+    s.m.position.z += Math.cos(tSim * 0.18 + s.ph) * s.sp * dt * 3;
+    s.m.position.y = groundH(s.m.position.x, s.m.position.z) + 2.4 + Math.sin(tSim * 0.3 + s.ph) * 0.4;
+  }
 }
 
 /* ---------- rain ---------- */
@@ -3895,6 +3952,7 @@ function stepFrame(dt){
   const dayF = updateDayNight(dt);
   updateWeather(dt);
   updateClouds(dt);
+  updateMist(dt);
   updateRain(dt);
   updateSnow(dt);
   updateLeaves(dt);
