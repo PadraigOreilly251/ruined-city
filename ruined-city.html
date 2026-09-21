@@ -46,7 +46,8 @@
   council &mdash; sun, fog, rain, and night, all day. West of town the cathedral stands
   alone in the west meadow, its broken flagging overgrown, one spire still reaching, its nave slowly giving way. A river winds
   through the eastern hills and opens into a sea cove at the map's edge, where old boats still lie
-  wrecked. In the open water beyond the cove, at night, something enormous surfaces now and then. Everything you see is real and walkable: there is no backdrop wall, only a city lost
+  wrecked. Behind the sea cliffs, the hills grow dark with an ancient evergreen forest, and in a
+  clearing stands a stone circle far older than the city. In the open water beyond the cove, at night, something enormous surfaces now and then. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
 </div>
 <div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes</div>
@@ -54642,6 +54643,14 @@ function columns(cells, material, noShadow){
                      two sea notches, layered-rock faces, grassy plateau
                      behind (a few wind-lean pines). Three lumpy sea stacks
                      stand offshore at its foot — gulls roost on the tops.
+   The Old Ring ... the plateau behind the cliffs (≈283, 247): a Neolithic
+                     stone circle (8 mossy menhirs, one fallen, one snapped)
+                     with a broken altar, a turf barrow with a stone ring
+                     (≈303, 285), and scattered fallen slabs — far older
+                     than the city, lost in a dark evergreen grove that is
+                     much thicker than the hill forest. The two far-hill
+                     slabs that used to squat at the map edge are gone;
+                     this is what the ridge behind the cliffs is now.
    The sea thing ... ~ (150, 390) open sea, south of the cove mouth. An
                      enormous serpent (~50 m) that surfaces only at night —
                      now and then its back breaks the surface and the head
@@ -56274,6 +56283,116 @@ const seaStacks = [];
   });
 }
 
+/* ---------- the Old Ring: ancient stones, far older than the city ----------
+   A Neolithic stone circle + barrow on the plateau behind the sea cliffs —
+   the two far-hill slabs that used to squat at the map edge read as
+   unexplained cubes; this replaces them with something with a history.
+   Lumpy fbm-displaced cylinders (same trick as the sea stacks) so the
+   stones are weathered monoliths, not blocks. Moss at the base, pale
+   lichen on the crowns. The grove block below thickens the forest here. */
+{
+  function stone(x, z, w, h, seed, opt = {}){
+    const geo = new THREE.CylinderGeometry(w * 0.72, w, h, 9, 5);
+    const pos = geo.attributes.position;
+    const cc = [];
+    for (let i = 0; i < pos.count; i++){
+      const x0 = pos.getX(i), y0 = pos.getY(i), z0 = pos.getZ(i);
+      const th = Math.atan2(z0, x0);
+      const ny = (y0 + h / 2) / h;
+      const lump = 1 + 0.30 * (fbm(th * 1.7 + seed, y0 * 0.5 + seed * 0.3) - 0.5)
+                 + 0.14 * (fbm(th * 3.9 + seed * 2, y0 * 1.4 + seed) - 0.5);
+      pos.setX(i, x0 * lump * (1 - 0.16 * ny));
+      pos.setZ(i, z0 * lump * (1 - 0.20 * ny));
+      pos.setY(i, y0 + 0.12 * h * Math.sin(th * 2 + seed) * (1 - ny));
+      /* weathered granite: damp dark base, mid grey, sun-bleached crown */
+      const c = new THREE.Color('#6f766c').lerp(new THREE.Color('#8d938a'), clamp01((ny - 0.15) * 1.3));
+      c.lerp(new THREE.Color('#a9aea3'), ny * 0.35);
+      /* moss creeps up from the ground line, patchy, worse on the north face */
+      const moss = clamp01((0.42 - ny) / 0.42) * (0.45 + 0.55 * fbm(x0 * 0.8 + seed, th * 2 + seed));
+      c.lerp(new THREE.Color('#4c663c'), moss * 0.75);
+      /* pale lichen patches near the crown */
+      const lich = clamp01((ny - 0.72) / 0.28) * clamp01(fbm(th * 3 + seed, x0 * 0.7) - 0.3);
+      c.lerp(new THREE.Color('#b7bdaa'), lich * 0.55);
+      cc.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cc, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    m.scale.z = opt.flat ?? 0.6;          /* menhirs are slabs: flatten */
+    const gy = groundH(x, z);
+    m.position.set(x, gy + h / 2 - (opt.bury ?? 0.15), z);
+    m.rotation.set(opt.rx ?? 0, (opt.ry ?? hash(seed, 77) * 3), opt.rz ?? 0);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+    return m;
+  }
+  function mound(x, z, r, h, seed, lift = 0){
+    const geo = new THREE.CylinderGeometry(r * 0.52, r, h, 12, 4);
+    const pos = geo.attributes.position;
+    const cc = [];
+    for (let i = 0; i < pos.count; i++){
+      const x0 = pos.getX(i), y0 = pos.getY(i), z0 = pos.getZ(i);
+      const th = Math.atan2(z0, x0);
+      const ny = (y0 + h / 2) / h;
+      const lump = 1 + 0.22 * (fbm(th * 2.1 + seed, y0 * 0.8 + seed) - 0.5);
+      pos.setX(i, x0 * lump);
+      pos.setZ(i, z0 * lump);
+      pos.setY(i, y0 + 0.10 * h * Math.sin(th * 3 + seed));
+      const c = new THREE.Color('#5d584a').lerp(new THREE.Color('#767059'), ny);
+      c.lerp(new THREE.Color('#4f6b3f'), clamp01(ny - 0.35) * (0.4 + 0.5 * fbm(th * 2 + seed, x0)));   /* turf on the crown */
+      cc.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cc, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    m.position.set(x, groundH(x, z) + h / 2 - 0.35 + lift, z);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+  }
+
+  /* the stone circle: 8 monoliths, one fallen outside, one snapped in two */
+  const CX = 283, CZ = 247, CR = 8.5;
+  for (let i = 0; i < 8; i++){
+    const a = (i / 8) * Math.PI * 2 + (hash(i, 80) - 0.5) * 0.25;
+    const x = CX + Math.cos(a) * CR * (0.9 + hash(i, 81) * 0.25);
+    const z = CZ + Math.sin(a) * CR * (0.9 + hash(i, 82) * 0.25);
+    if (i === 3){   /* the fallen one — lies on its side outside the ring */
+      stone(x + Math.cos(a) * 3.5, z + Math.sin(a) * 3.5, 1.15, 4.6, 40 + i,
+        { rx: 1.4, rz: 0.2, flat: 0.5, bury: 0.9 });
+      continue;
+    }
+    if (i === 5){   /* snapped: stump + leaning capstone */
+      stone(x, z, 1.25, 2.4, 40 + i, { flat: 0.65, rz: 0.05 });
+      stone(x, z + 0.2, 1.05, 3.4, 41 + i, { ry: 0.8, rz: 0.3, flat: 0.55, bury: 0.5 });
+      continue;
+    }
+    stone(x, z, 1.0 + hash(i, 83) * 0.45, 4.4 + hash(i, 84) * 2.6, 40 + i,
+      { flat: 0.55 + hash(i, 85) * 0.15, rz: (hash(i, 86) - 0.5) * 0.16, bury: 0.2 });
+  }
+  /* the broken altar: two slabs in the circle's middle */
+  stone(CX - 0.6, CZ + 0.8, 1.5, 1.2, 90, { rx: 1.5, flat: 0.45, bury: 0.5 });
+  stone(CX + 1.4, CZ - 0.5, 1.2, 1.6, 91, { rz: 0.1, flat: 0.6, bury: 0.35 });
+
+  /* the barrow: turf mound with a ring of small stones + a leaning sentinel */
+  const BX = 303, BZ = 285;
+  mound(BX, BZ, 5.4, 3.0, 60);
+  mound(BX, BZ, 3.5, 2.3, 61, 0.35);
+  mound(BX, BZ, 1.9, 1.5, 62, 0.9);
+  for (let i = 0; i < 9; i++){
+    const a = (i / 9) * Math.PI * 2 + (hash(i, 97) - 0.5) * 0.3;
+    stone(BX + Math.cos(a) * 6.6, BZ + Math.sin(a) * 6.6,
+      0.55 + hash(i, 98) * 0.3, 0.7 + hash(i, 99) * 0.5, 110 + i, { flat: 0.5, bury: 0.25 });
+  }
+  stone(BX + 7.4, BZ - 2.5, 0.8, 3.6, 119, { rz: 0.14, flat: 0.5, bury: 0.3 });
+
+  /* a few fallen slabs scattered through the clearing */
+  [[262, 231], [312, 258], [291, 300], [318, 302]].forEach(([sx, sz], i) => {
+    stone(sx + (hash(i, 92) - 0.5) * 6, sz + (hash(i, 93) - 0.5) * 6,
+      0.8 + hash(i, 94) * 0.5, 1.2 + hash(i, 95) * 0.8, 95 + i,
+      { rx: 1.45, flat: 0.45, bury: 0.55 });
+  });
+}
+
 /* ---------- water tower (tilted, on its last legs) ---------- */
 {
   const cells = [];
@@ -57599,6 +57718,47 @@ function treeRoof(x, z, baseY, h, seed){
   if (mMesh){ registerSeasonFoliage(mMesh, 'maple'); tintFoliageNow(mMesh, 'maple'); }
 }
 
+/* ---------- thick grove behind the sea cliffs: the ancient forest ----------
+   The plateau east of the cliffs holds the Old Ring. Its forest is denser
+   and darker than the hill forest — mostly deep evergreen, some shadowy
+   broadleaf. The clearings around the stone circle + barrow stay open. */
+{
+  const trunkCells = [], everCells = [], broadCells = [];
+  let placed = 0, tries = 0;
+  while (placed < 130 && tries < 2500){
+    tries++;
+    const x = 250 + hash(tries + 9000, 7) * 76;     /* 250..326 */
+    const z = 183 + hash(tries + 9000, 8) * 168;    /* 183..351 */
+    const h = groundH(x, z);
+    if (h < 4) continue;                            /* plateau + ridge only */
+    if (Math.hypot(x - 283, z - 247) < 15) continue;   /* the ring's clearing */
+    if (Math.hypot(x - 303, z - 285) < 13) continue;   /* the barrow's ring */
+    if (hash(tries + 9000, 9) < 0.18) continue;     /* clumps, not a grid */
+    const s = 1.1 + hash(tries + 9000, 10) * 1.5;
+    const v = hash(tries + 9000, 41);
+    if (v < 0.7){
+      /* dark evergreen — deeper than the hill forest, never tints */
+      trunkCells.push({ x, z, y: h, sy: 3.4 * s, sx: 0.45 * s, sz: 0.45 * s, color: 0x3a3028 });
+      everCells.push({ x, z, y: h + 1.5 * s, sy: 2.5 * s, sx: 2.8 * s, sz: 2.8 * s, ry: hash(tries + 9000, 42) * 3, color: 0x2e4a2b });
+      everCells.push({ x, z, y: h + 3.3 * s, sy: 1.9 * s, sx: 1.9 * s, sz: 1.9 * s, ry: hash(tries + 9000, 43) * 3, color: 0x35542f });
+      everCells.push({ x, z, y: h + 4.8 * s, sy: 1.4 * s, sx: 1.2 * s, sz: 1.2 * s, ry: hash(tries + 9000, 44) * 3, color: 0x3d5f38 });
+    } else if (v < 0.92){
+      /* shadowy broadleaf */
+      trunkCells.push({ x, z, y: h, sy: 3.4 * s, sx: 0.7 * s, sz: 0.7 * s, color: 0x3f352b });
+      broadCells.push({ x, z, y: h + 2.6 * s, sy: 3.8 * s, sx: 3.2 * s, sz: 3.0 * s, ry: hash(tries + 9000, 11) * 3, color: 0x3c5530 });
+    } else {
+      /* dead tree: bare, leaning, broken grey trunk */
+      trunkCells.push({ x, z, y: h, sy: 4.4 * s, sx: 0.55 * s, sz: 0.55 * s, rz: (hash(tries + 9000, 45) - 0.5) * 0.12, color: 0x7d756b });
+      trunkCells.push({ x: x + 0.3 * s, z, y: h + 3.6 * s, sy: 1.2 * s, sx: 0.3 * s, sz: 0.3 * s, rz: (hash(tries + 9000, 46) - 0.5) * 0.6, color: 0x7d756b });
+    }
+    placed++;
+  }
+  columns(trunkCells, lamber(0xffffff));
+  columns(everCells, lamber(0xffffff));   /* evergreen: deliberately left unseasoned */
+  const gMesh = columns(broadCells, lamber(0xffffff));
+  if (gMesh){ registerSeasonFoliage(gMesh, 'leaf'); tintFoliageNow(gMesh, 'leaf'); }
+}
+
 /* ---------- far hill ring: sits just past the map edge so the terrain cliff hides in the horizon ---------- */
 {
   const HILL_COLS = [0x8b9486, 0x939a8c, 0x838c7f, 0x9aa093, 0x86907f];
@@ -57607,11 +57767,19 @@ function treeRoof(x, z, baseY, h, seed){
     const a = (i / 28) * Math.PI * 2 + (hash(i, 51) - 0.5) * 0.3;
     const r = 330 + hash(i, 52) * 110;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    /* the NE sector behind the sea cliffs belongs to the ancient grove +
+       Old Ring — hill slabs there read as two giant cubes at the map edge */
+    if (x > 225 && z > 150 && z < 360) continue;
     /* drop any far-hill cell that now sits in the sea or inside the cove —
        it would read as a floating slab in the water */
     const ww = waterHalfWidth(z);
     const rd = ww > 0.4 ? Math.abs(x - waterCenterX(z)) : 1e9;
     if (z > 330 || (ww > 0.4 && rd < ww + 40)) continue;
+    /* Beyond the map's square there is no terrain to hide the base (y = −14):
+       over the open sea and past the far rim those cells read as slabs
+       floating in the sky (NE corner cubes, NW/W slabs). The terrain edge
+       itself reads as a low far horizon, so only keep cells on real ground. */
+    if (Math.max(Math.abs(x), Math.abs(z)) > 330) continue;
     const w = 55 + hash(i, 53) * 60, d = 45 + hash(i, 54) * 45, hgt = 16 + hash(i, 55) * 28;
     cells.push({ x, z, y: -14, sy: hgt, sx: w, sz: d, ry: hash(i, 57) * 3,
       color: HILL_COLS[Math.floor(hash(i, 56) * HILL_COLS.length)] });

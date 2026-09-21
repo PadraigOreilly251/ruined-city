@@ -69,12 +69,14 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
 | **Lighthouse** | (72, 195) | Banded rust rings, gallery, dome — **reads too clean for an abandoned world**: needs weathering (rust streaks, broken gallery rail, dead/dark lamp, overgrown base). Currently on the cove's west shore. |
 | **Sea cliffs** | cove east shore, z ≈ 190–322 | Smooth coastal bluff opposite the lighthouse: undulating 15–30 m crest, two sea notches, layered-rock faces (fbm-wobbled strata), wave-cut toe, grassy plateau with wind-lean pines behind. Three lumpy sea stacks offshore at its foot (z ≈ 222 / 236 / 246 — the tall one stands above the northern sea notch) with animated foam rings. |
 | **The sea thing** | open sea, z 355–505 | Enormous serpent (~50 m) that surfaces only at night, now and then breaking the surface for a few seconds before diving. Random patrol, uncatchable — ambient presence, not a visitable landmark. |
+| **The Old Ring** | (≈283, 247) plateau behind the sea cliffs | Neolithic stone circle: 8 mossy menhirs (one fallen outside the ring, one snapped into stump + leaning capstone), a broken two-slab altar in the middle. A turf barrow with a stone ring + leaning sentinel (≈303, 285) and scattered fallen slabs nearby. Stones are fbm-wobbled cylinders with vertex-coloured weathering (damp base, sun-bleached crowns, moss, lichen) — weathered monoliths, not blocks. Far older than the city. The two far-hill slabs that used to squat at the NE map edge are skipped instead; the sector is now a dark evergreen grove much thicker than the hill forest, with the ring + barrow in open clearings. |
 | Radio mast | — | Thin mast on the skyline. |
 | Ferris wheel | — | Rust-red, east of town. |
 | Boat graveyard | cove shore | Beached wrecks + sunken hull + ruined jetty. |
 - **Living landscape** — hero trees that sway, grass tufts that bend, a
   meandering river, a sea cove with lily pads and wrecked boats, reeds,
-  wildflowers, mushrooms, fallen logs.
+  wildflowers, mushrooms, fallen logs, and the Old Ring — a Neolithic
+  stone circle and barrow in a dark evergreen grove behind the sea cliffs.
 - **Day/night** — 24 h cycle in 4 real minutes: sunrise, dusk, moonlit night,
   lit windows, streetlamps that flicker at dusk, a few that sputter back to
   life, lighthouse beam, stars and shooting stars on clear nights.
