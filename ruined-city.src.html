@@ -272,6 +272,8 @@ function concColor(seed, lit){
 const MOSS_G = ['#6c8a4f','#78965a','#5d7a45','#86a062'].map(h => new THREE.Color(h));
 const IVY_G = ['#5f7f46','#6d8f50','#4f6e3c','#779a57'].map(h => new THREE.Color(h));
 const BARK = lamber(0x5d5040), BARK_D = lamber(0x4a4033);
+const BARK_W = lamber(0xcfc8ba), BARK_DASH = lamber(0x5a544c);   /* birch bark + subtle dash marks */
+const BARK_WILLOW = lamber(0x8a7358);   /* willow: greyer, sunnier bark */
 const LEAF_G = ['#5d7f46','#6b8f52','#527240','#7a9c5e','#678a4e'].map(h => lamber(h));
 const LEAF_C = ['#3d5a34','#466a3c','#35512c'].map(h => lamber(h));   /* conifer greens (darker, cooler) */
 const DEAD_WOOD = lamber(0x8a8074);   /* bleached dead-tree wood */
@@ -745,6 +747,33 @@ function ruin(x, z, w, d, floors, seed){
       color: IVY_G[Math.floor(hash(seed+i, 45) * 4)] });
   }
   if (vines.length) columns(vines, lamber(0xffffff));
+  /* kudzu: some buildings get swallowed — vines trail UP in strips, not a painted sheet */
+  if (hash(seed, 290) < 0.15){
+    const kc = [];
+    const kcol = () => IVY_G[Math.floor(hash(seed + kc.length, 295) * 4)];
+    const bh = topMaxF * FH;
+    const ns = 5 + Math.floor(hash(seed, 291) * 5);
+    for (let i = 0; i < ns; i++){
+      const sw = w * (0.12 + hash(seed + i, 292) * 0.2);
+      const sh = bh * (0.35 + hash(seed + i, 293) * 0.65);
+      kc.push({ x: x - w * 0.9 + (i + 0.5) / ns * w * 1.8 + (hash(seed + i, 299) - 0.5) * w * 0.1,
+        z: z - d/2 - 0.06, y: gY + bh - sh, sy: sh, sx: sw, sz: 0.09, color: kcol() });
+    }
+    if (hash(seed, 300) < 0.7){
+      for (const sgn of [-1, 1]){
+        const sh = bh * (0.3 + hash(seed + (sgn + 1), 301) * 0.6);
+        kc.push({ x: x + sgn * (w/2 + 0.06), z, y: gY + bh - sh, sy: sh, sx: 0.09, sz: d * (0.4 + hash(seed, 302) * 0.4), color: kcol() });
+      }
+    }
+    /* roof creep on the low buildings only */
+    if (!shTall && hash(seed, 303) < 0.5)
+      kc.push({ x: x + (hash(seed, 304) - 0.5) * w * 0.3, z, y: topMaxF * FH + gY + 0.4, sy: 0.26, sx: w * 0.55, sz: d * 0.6, color: kcol() });
+    /* fringe hanging over the roof edge */
+    for (let i = 0; i < 7; i++)
+      kc.push({ x: x + (hash(seed + i, 297) - 0.5) * w * 0.95, z: z - d/2 - 0.09,
+        y: topMaxF * FH + gY - 0.2, sy: 1.2 + hash(seed + i, 298) * 2.6, sx: 0.09, sz: 0.09, color: kcol() });
+    columns(kc, lamber(0xffffff));
+  }
 }
 
 /* ---------- keep-clear zones for hand-placed landmarks ----------
@@ -2472,23 +2501,26 @@ const leafFrom = LEAF_G.map(m => m.color.clone());
 const leafTo = LEAF_G.map(() => new THREE.Color());
 
 /* ---------- hero trees (sway) ---------- */
-function tree(x, z, h, w, seed, baseY, dense){
+function tree(x, z, h, w, seed, baseY, dense, variant){
   if (dense === undefined) dense = true;
   const g = new THREE.Group();
   const B = (a, b, c) => new THREE.BoxGeometry(a, b, c);
-  /* variant: 0 leafy, 1 conifer, 2 dead. Seeded so it's stable per tree. */
-  const kind = hash(seed, 900) < 0.12 ? 1 : hash(seed, 901) < 0.2 ? 2 : 0;
-  /* trunk: two stacked tapered boxes */
-  const t1 = new THREE.Mesh(B(w*1.35, h*0.55, w*1.25), BARK_D);
-  t1.position.set(0, h*0.275, 0); t1.castShadow = true; g.add(t1);
-  const t2 = new THREE.Mesh(B(w*0.95, h*0.52, w*0.9), BARK);
-  t2.position.set((hash(seed,11)-0.5)*0.12, h*0.8, (hash(seed,12)-0.5)*0.12);
-  t2.rotation.z = (hash(seed,13)-0.5)*0.06; t2.castShadow = true; g.add(t2);
-  const rf = new THREE.Mesh(B(w*1.7, 0.35, w*1.6), BARK_D);
-  rf.position.y = 0.15; rf.castShadow = true; g.add(rf);
-  /* root flare: widens the base so the trunk stops reading as a column */
-  const rf2 = new THREE.Mesh(B(w*2.2, 0.6, w*2.0), BARK_D);
-  rf2.position.y = 0.05; rf2.castShadow = true; g.add(rf2);
+  /* variant: 0 leafy, 1 conifer, 2 dead, 3 birch, 4 willow. Seeded unless forced. */
+  const kind = variant !== undefined ? variant
+    : ((r) => r < 0.10 ? 1 : r < 0.16 ? 2 : r < 0.25 ? 3 : 0)(hash(seed, 899));
+  /* trunk: two stacked tapered boxes — only for kinds that don't author their own (birch, willow) */
+  if (kind !== 3 && kind !== 4){
+    const t1 = new THREE.Mesh(B(w*1.35, h*0.55, w*1.25), BARK_D);
+    t1.position.set(0, h*0.275, 0); t1.castShadow = true; g.add(t1);
+    const t2 = new THREE.Mesh(B(w*0.95, h*0.52, w*0.9), BARK);
+    t2.position.set((hash(seed,11)-0.5)*0.12, h*0.8, (hash(seed,12)-0.5)*0.12);
+    t2.rotation.z = (hash(seed,13)-0.5)*0.06; t2.castShadow = true; g.add(t2);
+    const rf = new THREE.Mesh(B(w*1.7, 0.35, w*1.6), BARK_D);
+    rf.position.y = 0.15; rf.castShadow = true; g.add(rf);
+    /* root flare: widens the base so the trunk stops reading as a column */
+    const rf2 = new THREE.Mesh(B(w*2.2, 0.6, w*2.0), BARK_D);
+    rf2.position.y = 0.05; rf2.castShadow = true; g.add(rf2);
+  }
   if (h >= 6 && kind === 0){
     /* low limbs on big trees: a few stubby, sloping boughs (thin, drooping — not bars) */
     const nl = 2 + Math.floor(hash(seed, 70) * 2);
@@ -2532,6 +2564,58 @@ function tree(x, z, h, w, seed, baseY, dense){
       limb.rotation.y = a;
       limb.castShadow = true;
       g.add(limb);
+    }
+  } else if (kind === 3){
+    /* birch: pale multi-stem trunks with dark dashes, light sparse high canopy */
+    const stems = [[0, 0, 1], [w*0.55, w*0.3, 0.8], [-w*0.5, w*0.55, 0.68]];
+    const base = new THREE.Mesh(B(w*1.5, 0.22, w*1.4), BARK_D);
+    base.position.y = 0.03; base.castShadow = true; g.add(base);
+    stems.forEach(([ox, oz, sc], si) => {
+      const st = new THREE.Mesh(B(w*0.42*sc, h*0.94*sc, w*0.4*sc), BARK_W);
+      st.position.set(ox*0.6, h*0.47*sc, oz*0.6);
+      st.rotation.z = (hash(seed, 300 + si) - 0.5) * 0.09;
+      st.castShadow = true; g.add(st);
+      for (let k = 0; k < 2; k++){
+        const dash = new THREE.Mesh(B(w*0.14*sc, 0.09*sc, w*0.04*sc), BARK_DASH);
+        dash.position.set(ox*0.6 + (hash(seed, 310 + k + si*3) - 0.5) * w*0.2*sc,
+                        h*sc*(0.25 + k*0.3), oz*0.6 - w*0.2*sc - 0.03);
+        dash.castShadow = true; g.add(dash);
+      }
+    });
+    const rc = h*0.20 + 0.6;
+    const nc = 5 + Math.floor(hash(seed, 320) * 3);
+    for (let i = 0; i < nc; i++){
+      const r = rc * (0.7 + hash(seed, 321 + i) * 0.55);
+      const blob = new THREE.Mesh(B(r*1.2, r*0.55, r), hash(seed, 322 + i) < 0.5 ? LEAF_G[3] : LEAF_G[4]);
+      const a = (i / nc) * Math.PI * 2 + hash(seed, 323 + i);
+      blob.position.set(Math.cos(a)*r*0.5, h*0.95 + r*0.2 + (hash(seed, 324 + i) - 0.5)*r*0.5, Math.sin(a)*r*0.5);
+      blob.rotation.y = hash(seed, 325 + i) * 1.5;
+      blob.castShadow = true; g.add(blob);
+    }
+  } else if (kind === 4){
+    /* willow: thick leaning trunk, wide flat canopy, hanging curtain strands */
+    const rf = new THREE.Mesh(B(w*1.5, 0.4, w*1.35), BARK_WILLOW);
+    rf.position.y = 0.08; rf.castShadow = true; g.add(rf);
+    const tr = new THREE.Mesh(B(w*1.25, h*0.72, w*1.1), BARK_WILLOW);
+    tr.position.set(0, h*0.4, 0); tr.rotation.z = (hash(seed, 330) - 0.5) * 0.16; tr.castShadow = true; g.add(tr);
+    const rc = h*0.34 + 1.2, cy = h*0.8;
+    for (let i = 0; i < 6; i++){
+      const r = rc * (0.7 + hash(seed, 331 + i) * 0.5);
+      const blob = new THREE.Mesh(B(r*1.25, r*0.42, r), hash(seed, 332 + i) < 0.5 ? LEAF_G[3] : LEAF_G[4]);
+      const a = (i / 6) * Math.PI * 2 + hash(seed, 333 + i);
+      blob.position.set(Math.cos(a)*rc*0.42, cy + (hash(seed, 334 + i) - 0.5)*0.5, Math.sin(a)*rc*0.42);
+      blob.rotation.y = hash(seed, 335 + i) * 1.5;
+      blob.castShadow = true; g.add(blob);
+    }
+    const strands = 16 + Math.floor(hash(seed, 340) * 6);
+    for (let i = 0; i < strands; i++){
+      const a = (i / strands) * Math.PI * 2 + hash(seed, 341 + i) * 0.4;
+      const rad = rc * (0.55 + hash(seed, 342 + i) * 0.5);
+      const len = cy - (0.4 + hash(seed, 343 + i) * 2.2);
+      const strand = new THREE.Mesh(B(0.12, len, 0.12), hash(seed, 344 + i) < 0.5 ? LEAF_G[4] : LEAF_G[3]);
+      strand.position.set(Math.cos(a)*rad, cy - len*0.5, Math.sin(a)*rad);
+      strand.rotation.z = Math.cos(a) * 0.05; strand.rotation.x = -Math.sin(a) * 0.05;
+      strand.castShadow = true; g.add(strand);
     }
   } else {
   /* canopy: a low, wide cluster of leaf boxes */
@@ -2628,7 +2712,32 @@ function treeRoof(x, z, baseY, h, seed){
     placed++;
   }
   columns(trunkCells, trunkMat);
-  columns(leafCells, leafMat);
+  const leafMesh = columns(leafCells, leafMat);
+  if (leafMesh){ registerSeasonFoliage(leafMesh, 'leaf'); tintFoliageNow(leafMesh, 'leaf'); }   /* forest broadleaf now turns with the seasons */
+}
+
+/* ---------- maples in the hill forest: first to turn, deepest red in autumn ---------- */
+{
+  const mTrunk = [], mapleCells = [];
+  const MCOL = [0x7f9a55, 0x8aa55e];
+  let placed = 0, tries = 0;
+  while (placed < 70 && tries < 900){
+    tries++;
+    const a = hash(tries + 5000, 7) * 6.28, r = 120 + hash(tries + 5000, 8) * 190;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = groundH(x, z);
+    if (h < 2.5) continue;
+    const s = 1.1 + hash(tries + 5000, 10) * 1.3;
+    mTrunk.push({ x, z, y: h, sy: 3.4 * s, sx: 0.7 * s, sz: 0.7 * s, color: 0x5a4c3c });
+    mapleCells.push({ x, z, y: h + 2.8 * s, sy: 3.6 * s, sx: 3.4 * s, sz: 3.2 * s,
+      ry: hash(tries + 5000, 11) * 3, color: MCOL[hash(tries + 5000, 12) < 0.5 ? 0 : 1] });
+    mapleCells.push({ x: x + 0.9 * s, z: z - 0.5 * s, y: h + 5.2 * s, sy: 2.2 * s, sx: 2.1 * s, sz: 1.9 * s,
+      ry: hash(tries + 5000, 14) * 3, color: MCOL[0] });
+    placed++;
+  }
+  columns(mTrunk, lamber(0xffffff));
+  const mMesh = columns(mapleCells, lamber(0xffffff));
+  if (mMesh){ registerSeasonFoliage(mMesh, 'maple'); tintFoliageNow(mMesh, 'maple'); }
 }
 
 /* ---------- far hill ring: sits just past the map edge so the terrain cliff hides in the horizon ---------- */
@@ -2777,6 +2886,7 @@ const SEASON_COLORS = {
   grass: [0x7d9a58, 0x66804a, 0x94864e, 0x85805f].map(h => new THREE.Color(h)),
   bush:  [0x66894a, 0x51733c, 0x8a7440, 0x77704f].map(h => new THREE.Color(h)),
   leaf:  [0x74a552, 0x47803c, 0xb5762f, 0x8a7a5f].map(h => new THREE.Color(h)),
+  maple: [0x8fbf6a, 0x74a24e, 0xbf5a2e, 0x857459].map(h => new THREE.Color(h)),   /* turns red early, deepest autumn */
 };
 const SEASON_MIX_STR = [0.75, 0.45, 0.8, 0.85];
 
@@ -2956,6 +3066,31 @@ function updateSeasons(dt){
   }
   const shoreMesh = columns(cells, lamber(0xffffff), true);
   if (shoreMesh){ registerSeasonFoliage(shoreMesh, 'grass'); tintFoliageNow(shoreMesh, 'grass'); }   /* reeds tint with the seasons */
+}
+
+/* ---------- birch groves + waterside willows ---------- */
+{
+  const grove = (cx, cz, n, seed) => {
+    for (let i = 0; i < n; i++){
+      const a = hash(seed + i, 401) * 6.28, r = 3 + hash(seed + i, 402) * 9;
+      const x = cx + Math.cos(a) * r, z = cz + Math.sin(a) * r;
+      if (inClearZone(x, z)) continue;
+      const g = groundH(x, z);
+      if (g > 1.6 || g < WATER_Y + 0.3) continue;
+      tree(x, z, 5 + hash(seed + i, 403) * 2.4, 0.95 + hash(seed + i, 404) * 0.35, seed + i * 17, g, true, 3);
+    }
+  };
+  grove(-102, -38, 7, 4100);
+  grove(-42, 112, 6, 4200);
+  /* willows at the water's edge: river west bank + lake north shore */
+  const willowAt = (x, z, seed) => {
+    if (inClearZone(x, z)) return;
+    const g = groundH(x, z);
+    if (g > 1.8 || g < WATER_Y + 0.25) return;
+    tree(x, z, 5.2 + hash(seed, 411) * 1.8, 1.15, seed, g, true, 4);
+  };
+  [12, 44, 76, 108, 140].forEach((z, i) => willowAt(riverX(z) - 10.5, z, 4300 + i));
+  [88, 102, 130, 144].forEach((x, i) => willowAt(x, 163 + hash(4400 + i, 412) * 3, 4400 + i));
 }
 
 /* ---------- mushrooms under the big trees ---------- */
