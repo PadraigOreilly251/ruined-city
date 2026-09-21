@@ -2236,12 +2236,14 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
      What survives of the old cloister paving is a sparse, overgrown flagstone
      field around it, densest on the processional axis west of the portal. */
   const BASE = -0.05;
-  /* close near-ground float gaps: floors/rubble sat 0.2-0.65 m above the plain */
+  /* THE coordinate fix: boxGeo is bottom-anchored (y = box bottom) for the whole
+     world, but this module was authored center-Y. Convert: bottom = y - sy/2.
+     This grounds the nave walls (were floating at 5.45 m) and both towers
+     (8.5-9.45 m). The old center-space "float close" loop is gone. */
   for (const c of cells){
-    const yy = c.y || 0, sy = c.sy || 1, top = yy + sy / 2, bot = yy - sy / 2;
-    if (bot > 0.02 && bot < 1.5){ c.sy = top; c.y = top / 2; }
+    const sy = c.sy || 1;
+    c.x += DX; c.z += DZ; c.y = (c.y || 0) - sy / 2 + BASE;
   }
-  for (const c of cells){ c.x += DX; c.z += DZ; c.y = (c.y || 0) + BASE; }
   /* --- ruined flagstones, world coords (pushed after the shift) --- */
   const flag = s => { const c = new THREE.Color(0x8f8a76);
     c.offsetHSL((hash(s, 2.2) - 0.5) * 0.02, (hash(s, 5.1) - 0.5) * 0.05, (hash(s, 8.3) - 0.5) * 0.1 - 0.02);
@@ -4715,6 +4717,9 @@ window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from conso
 window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt now */
 
 window.__RC_BOLT_MESH__ = bolt;   /* debug: inspect the bolt mesh */
+window.__RC_GROUND__ = groundH;   /* debug: terrain height sampler */
+window.__RC_SCENE__ = scene;      /* debug: scene + THREE for raycast probes */
+window.__RC_THREE__ = THREE;
 window.__RC_READY__ = true;
 window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2]; window._hunt = hunt;
 window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
