@@ -2230,21 +2230,30 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
      ground-anchored at runtime: sample groundH over the footprint, sit it on a
      raised stone podium. Real cathedrals got podiums too. */
   const CMX = -120, CMZ = 80, DX = CMX - CX, DZ = CMZ - CZ;  /* west NW meadow, outside the deer/fox band */
-  let gmax = 0;
-  for (const ox of [-18, 0, 18]) for (const oz of [-15, 0, 15])
-    gmax = Math.max(gmax, groundH(CMX + ox, CMZ + oz));
-  const BASE = gmax + 0.15;
+  /* terrain here: flat 0 across most of the lot, a 1.85 bank ~2.5 m beyond the west edge.
+     Keep the plaza only ~0.5 m above the meadow — like the town's buildings — and the
+     8 m skirt (below) buries the west bank, so nothing floats and nothing dominates. */
+  const BASE = 0.55;
   /* close near-ground float gaps: floors/rubble sat 0.2-0.65 m above the plain */
   for (const c of cells){
     const yy = c.y || 0, sy = c.sy || 1, top = yy + sy / 2, bot = yy - sy / 2;
     if (bot > 0.02 && bot < 1.5){ c.sy = top; c.y = top / 2; }
   }
-  /* the podium: buries terrace steps under the lot (deep: terrain falls ~5 m west→east) */
+  /* the podium: buried deep; its flanks hidden by the earth terraces below */
   cells.push({ x: CX, z: CZ + 1, y: -4, sy: 8, sx: 48, sz: 38, color: st(931, 0.1) });
   cells.push({ x: CX, z: CZ + 1, y: -0.05, sy: 0.1, sx: 47, sz: 37, color: st(932, 0.22) });
+  /* soft earth berm hugging the podium: hides the crisp stone edge so the plaza
+     emerges from the meadow instead of sitting on it like a table */
+  const BERM = [0x77774d, 0x6b6c45];
+  for (let k = 0; k < 2; k++){
+    const c = new THREE.Color(BERM[k]);
+    c.offsetHSL((hash(771 + k * 17, 3.3) - 0.5) * 0.02, 0, (hash(772 + k * 13, 9.1) - 0.5) * 0.04);
+    cells.push({ x: CX, z: CZ + 1, y: -0.5 + k * 0.25, sy: 0.5,
+      sx: 48 + 5 - k * 2.6, sz: 38 + 5 - k * 2.6, color: c.getHex() });
+  }
   for (const c of cells){ c.x += DX; c.z += DZ; c.y = (c.y || 0) + BASE; }
   columns(cells, lamber(0xffffff));
-  BLOCKS.push({ x: CMX, z: CMZ + 1, w: 50, d: 40 });   /* keep vegetation off the podium */
+  BLOCKS.push({ x: CMX, z: CMZ + 1, w: 56, d: 46 });   /* keep trees off podium + berm */
   /* the reclamation: a tree up through the broken nave roof, another through the fallen transept */
   tree(CMX + 10.5, 21.5 + DZ, 12.5, 1.5, 9417, 0.55 + BASE);
   treeRoof(CMX + 2.5, 30.5 + DZ, 0.6 + BASE, 7, 9418);
@@ -4682,8 +4691,11 @@ function animate(){
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
 window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
+
 window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt now */
+
 window.__RC_BOLT_MESH__ = bolt;   /* debug: inspect the bolt mesh */
+window.__RC_READY__ = true;
 window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2]; window._hunt = hunt;
 window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
 window._perch = perch;
