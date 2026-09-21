@@ -56483,9 +56483,12 @@ const seaStacks = [];
     const s = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), SLIT);
     s.position.set(x, y, z); scene.add(s);
   });
-  /* the collapsed SW corner: a big slab tipped out onto the rock */
-  tb(TX - 6.2, TGY + 1.2, TZ + 5.8, 2.6, 4.4, 2.0, 307, { topBreak: 0.9, rx: 0.15, rz: 0.5 });
-  tb(TX - 8.4, TGY + 0.8, TZ + 4.6, 1.6, 2.6, 1.4, 308, { topBreak: 0.5, rz: -0.3 });
+  /* the collapsed SW corner: slabs tipped over the cliff lip.
+     They straddle the lip (the rock drops off sharply a few metres west of
+     the tower) and their bases are embedded in the local ground — at plateau
+     height they would dangle in the air over the face. */
+  tb(TX - 4.8, groundH(TX - 4.8, TZ + 4.6) + 4.4 * 0.42, TZ + 4.6, 2.6, 4.4, 2.0, 307, { topBreak: 0.9, rx: 0.15, rz: 0.5 });
+  tb(TX - 5.2, groundH(TX - 5.2, TZ + 2.8) + 2.6 * 0.42, TZ + 2.8, 1.6, 2.6, 1.4, 308, { topBreak: 0.5, rz: -0.3 });
   /* crown rubble along the ragged tops */
   [[TX - 4.2, TGY + 9.3, TZ - 3.6, 1.1], [TX - 3.0, TGY + 9.1, TZ - 1.0, 0.9],
    [TX - 4.3, TGY + 9.2, TZ + 0.8, 1.0], [TX - 2.7, TGY + 8.8, TZ - 3.9, 0.7],
