@@ -67,6 +67,7 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
 | Water tower | (88, −62) | Tilted, on its last legs (city). |
 | Water tower 2 | (−6, 132) | Lone rusted tank, south meadow (deliberately isolated). |
 | **Lighthouse** | (72, 195) | Banded rust rings, gallery, dome — **reads too clean for an abandoned world**: needs weathering (rust streaks, broken gallery rail, dead/dark lamp, overgrown base). Currently on the cove's west shore. |
+| **Sea cliffs** | cove east shore, z ≈ 190–322 | Smooth coastal bluff opposite the lighthouse: undulating 15–30 m crest, two sea notches, layered-rock faces (fbm-wobbled strata), wave-cut toe, grassy plateau with wind-lean pines behind. Three lumpy sea stacks offshore at its foot (z ≈ 222 / 236 / 246 — the tall one stands above the northern sea notch) with animated foam rings. |
 | **The sea thing** | open sea, z 355–505 | Enormous serpent (~50 m) that surfaces only at night, now and then breaking the surface for a few seconds before diving. Random patrol, uncatchable — ambient presence, not a visitable landmark. |
 | Radio mast | — | Thin mast on the skyline. |
 | Ferris wheel | — | Rust-red, east of town. |
@@ -85,7 +86,9 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
   snow (falling + accumulating ground/roof/landmark caps), storm (darker sky,
   heavier rain, lightning flashes), blizzard (winter whiteout: dense fog to
   ~120 m, driving snow that falls and blows harder, near-gale wind).
-- **Wildlife** — deer, rabbits, foxes and crows roam; fireflies on clear
+- **Wildlife** — deer, rabbits, foxes and crows roam; gulls wheel the cove by
+  day (lazy glides, stoops to the water, a few roosting on the sea stacks —
+  gone by dusk and in blizzards); fireflies on clear
   summer nights; autumn leaves drift down; snow footprints: a deer trail from
   the meadow into town and a fox trail along the avenue.
 - **Procedural ambient audio** — WebAudio wind, rain, water, thunder,

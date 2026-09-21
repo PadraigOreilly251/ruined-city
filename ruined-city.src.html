@@ -188,6 +188,11 @@ function columns(cells, material, noShadow){
                      sea beyond (no shore to the south — it just goes on).
                      Water surface at WATER_Y (−0.55); sunken boat at
                      (≈118,252), beached wrecks + ruined jetty on the shore.
+   Sea cliffs ...... the cove's EAST shore (z ≈ 190…322), opposite the
+                     lighthouse: a smooth coastal bluff, 15-30 m crest with
+                     two sea notches, layered-rock faces, grassy plateau
+                     behind (a few wind-lean pines). Three lumpy sea stacks
+                     stand offshore at its foot — gulls roost on the tops.
    The sea thing ... ~ (150, 390) open sea, south of the cove mouth. An
                      enormous serpent (~50 m) that surfaces only at night —
                      now and then its back breaks the surface and the head
@@ -204,7 +209,9 @@ function columns(cells, material, noShadow){
                      deer herd, rabbits, squirrels.
    Hill forest ..... beyond r≈120 wherever terrain ≥ 2.5m (instanced pines).
    Wildlife ........ deer (west meadow), foxes (city, nocturnal), crows +
-                     day birds + bats, fireflies (night meadow/city),
+                     day birds + bats, gulls (cove, day: wheel, stoop, roost
+                     on the sea stacks; gone at dusk + in blizzards),
+                     fireflies (night meadow/city),
                      bees & butterflies (day, meadow + ruins).
    ============================================================ */
 
@@ -265,6 +272,29 @@ function groundH(x, z){
         const shelfY = 1.4 + 1.0 * fbm(x * 0.03 + 9.1, z * 0.03 + 5.3);
         const t = Math.sqrt(clamp01(1 - rd / basin));
         if (h > shelfY) h = lerpN(h, shelfY, t);
+      }
+    }
+  }
+  /* sea cliffs: a smooth coastal bluff on the cove's EAST shore — opposite the
+     lighthouse — running from the headland by the tower down to the cove mouth.
+     Undulating 15-30 m crest with two sea notches; the steep face is softened
+     into a wave-cut toe by the bank-slope blend below, so it meets the water
+     clean instead of standing up as a wall. */
+  if (z > 190 && z < 322){
+    const cw = waterHalfWidth(z);
+    if (cw > 0.4){
+      const de = x - (waterCenterX(z) + cw);          /* inland from the east waterline */
+      if (de > -3){
+        const sstep = (a, b, v) => { const u = clamp01((v - a) / (b - a)); return u * u * (3 - 2 * u); };
+        const zt = sstep(190, 216, z) * sstep(322, 296, z);    /* ease in/out along the shore */
+        let crest = (17 + 16 * fbm(z * 0.012 + 3.3, 21.7)) * zt;
+        crest *= 1 - 0.62 * Math.exp(-((z - 236) ** 2) / 70)     /* sea notches: the water reaches higher here */
+                   - 0.42 * Math.exp(-((z - 288) ** 2) / 45);
+        const fw = 12 + 5 * fbm(z * 0.021 + 5.1, 8.8);          /* face width 12-17 m — steep */
+        const t = Math.pow(sstep(-3, fw, de), 1.05);
+        const ledge = 1 + 0.07 * fbm(de * 0.09 + 2.2, z * 0.045 + 9.4);   /* subtle ledges on the face */
+        const ch = crest * t * ledge;
+        if (ch > h) h = ch;
       }
     }
   }
@@ -354,6 +384,34 @@ let groundGeo = null;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
   geo.computeVertexNormals();
+  /* sea-cliff strata: the steep east-shore faces read as layered rock —
+     horizontal sediment bands wobbled by fbm, a darker damp base at the
+     waterline and a lighter sun-bleached crest. Only the cliff zone. */
+  {
+    const nrm = geo.attributes.normal, col = geo.attributes.color;
+    const RK_A = new THREE.Color('#7d7466'), RK_B = new THREE.Color('#514c43'),
+          RK_L = new THREE.Color('#9a9084'), RK_D = new THREE.Color('#383e3a');
+    for (let i = 0; i < pos.count; i++){
+      const ny = nrm.getY(i);
+      if (ny > 0.88) continue;
+      const x = pos.getX(i), z = pos.getZ(i), hy = pos.getY(i);
+      if (z < 188 || z > 324 || hy < -1) continue;
+      const cw = waterHalfWidth(z);
+      if (cw < 0.4) continue;
+      if (x < waterCenterX(z) + cw - 0.5) continue;          /* east shore only */
+      const steep = clamp01((0.88 - ny) / 0.5);
+      if (steep < 0.03) continue;
+      const band = 0.5 + 0.5 * Math.sin(hy * 0.42 + fbm(x * 0.13 + 4.4, z * 0.13 + 2.1) * 2.6);
+      const c = RK_B.clone().lerp(RK_A, band);
+      c.lerp(RK_L, clamp01((hy - 12) / 18) * 0.3);
+      c.lerp(RK_D, clamp01((4.5 - hy) / 4.5) * 0.55);
+      col.setXYZ(i,
+        col.getX(i) + (c.r - col.getX(i)) * steep,
+        col.getY(i) + (c.g - col.getY(i)) * steep,
+        col.getZ(i) + (c.b - col.getZ(i)) * steep);
+    }
+    col.needsUpdate = true;
+  }
   const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
   ground.receiveShadow = true;
   scene.add(ground);
@@ -1714,6 +1772,57 @@ function makeBoat(seed, o){
     m.castShadow = true; m.receiveShadow = true;
     scene.add(m);
   }
+}
+
+/* ---------- sea stacks: lumpy rock pillars offshore at the cliff foot ----------
+   Offshore along the east bluff line, half-drowned in the cove. The tops are
+   flat enough for gulls to roost on. */
+const seaStacks = [];
+{
+  const sites = [
+    { z: 246, off: 13, r: 3.1, h: 9 },    /* the squat one */
+    { z: 236, off: 17, r: 2.5, h: 15 },   /* the tall column — stands above the sea notch */
+    { z: 222, off: 21, r: 2.2, h: 5.5 },  /* the low slab */
+  ];
+  sites.forEach((st, si) => {
+    st.x = waterCenterX(st.z) + waterHalfWidth(st.z) + st.off;
+    const base = WATER_Y - 1.3;
+    const geo = new THREE.CylinderGeometry(st.r * 0.62, st.r, st.h, 9, 6);
+    const pos = geo.attributes.position;
+    const cc = [];
+    for (let i = 0; i < pos.count; i++){
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const th = Math.atan2(z, x);
+      const ny = (y + st.h / 2) / st.h;               /* 0 base → 1 crown */
+      /* lumpy: fbm radial displacement, a slightly wavy crown */
+      const lump = 1 + 0.35 * (fbm(th * 1.8 + si * 3.1, y * 0.45 + si) - 0.5)
+                   + 0.16 * (fbm(th * 4.1 + si, y * 1.3 + si * 2) - 0.5);
+      pos.setX(i, x * lump * (1 - 0.18 * ny));
+      pos.setZ(i, z * lump * (1 - 0.18 * ny));
+      pos.setY(i, y + 0.25 * Math.sin(th * 2 + si) * (1 - ny));
+      /* strata: horizontal bands, dark damp base, sun-bleached crown */
+      const band = 0.5 + 0.5 * Math.sin(y * 0.5 + fbm(x * 0.5 + si, z * 0.5) * 2.4);
+      const c = new THREE.Color('#565147').lerp(new THREE.Color('#7b7264'), band);
+      c.lerp(new THREE.Color('#9a9084'), ny * 0.25);
+      c.lerp(new THREE.Color('#3d4340'), clamp01((0.25 - ny) / 0.25) * 0.5);
+      cc.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(cc, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }));
+    m.position.set(st.x, base + st.h / 2, st.z);
+    m.castShadow = true; m.receiveShadow = true;
+    scene.add(m);
+    st.top = base + st.h + 0.15;
+    /* foam ring where the water laps the rock */
+    const fr = new THREE.Mesh(new THREE.RingGeometry(st.r + 0.25, st.r + 1.15, 22),
+      new THREE.MeshBasicMaterial({ color: 0xdfe8ea, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
+    fr.rotation.x = -Math.PI / 2;
+    fr.position.set(st.x, WATER_Y + 0.05, st.z);
+    fr.renderOrder = 2;
+    scene.add(fr);
+    seaStacks.push({ x: st.x, z: st.z, top: st.top, r: st.r, foam: fr, ph: si * 2.1 });
+  });
 }
 
 /* ---------- water tower (tilted, on its last legs) ---------- */
@@ -3408,6 +3517,13 @@ function updateSeasons(dt){
     if (inClearZone(x, z)) return;
     tree(x, z, 8 + hash(5100 + i, 600) * 4, 1.7 + hash(5100 + i, 601) * 0.5, 5100 + i * 7, groundH(x, z), true, 5);
   });
+  /* a few on the sea-cliff plateau — the wind keeps them lean */
+  const cliffPines = [[waterCenterX(255) + waterHalfWidth(255) + 34, 255],
+                      [waterCenterX(228) + waterHalfWidth(228) + 48, 228],
+                      [waterCenterX(285) + waterHalfWidth(285) + 26, 285]];
+  cliffPines.forEach(([x, z], i) => {
+    tree(x, z, 5.5 + hash(7300 + i, 600) * 2.5, 1.4 + hash(7300 + i, 601) * 0.4, 7300 + i * 7, groundH(x, z), true, 5);
+  });
 }
 
 /* ---------- water tower: lone rusted tank on the south meadow ----------
@@ -4929,6 +5045,144 @@ function updateBirds(dt, dayF){
   }
 }
 
+/* ---------- gulls (over the cove and the cliffs) ---------- */
+/* White gulls wheel the cove in slow lazy circuits: long held-wing glides,
+   sudden stoops down to the water, and a few roosting on the sea stacks.
+   Daylight birds — gone by dusk, and gone in a blizzard whiteout. */
+const gulls = [];
+function makeGull(cx, cz, rx, rz, h, speed, ph, s, perchAt){
+  const g = new THREE.Group();
+  const white = lamber(0xf5f3ec), wingC = lamber(0xb6bcc4),
+        tipC = lamber(0x3c4046), beakC = lamber(0xd99a3e),
+        legC = lamber(0xcf8f3c), tailC = lamber(0xd8d4ca);
+  const body = new THREE.Mesh(B(0.3 * s, 0.11 * s, 0.5 * s), white); body.castShadow = true; g.add(body);
+  const wGeoL = new THREE.BoxGeometry(0.58 * s, 0.016, 0.26 * s); wGeoL.translate(-0.29 * s, 0, 0);
+  const wGeoR = new THREE.BoxGeometry(0.58 * s, 0.016, 0.26 * s); wGeoR.translate(0.29 * s, 0, 0);
+  const wl = new THREE.Mesh(wGeoL, wingC); wl.castShadow = true; g.add(wl);
+  const wr = new THREE.Mesh(wGeoR, wingC); wr.castShadow = true; g.add(wr);
+  const tipL = new THREE.Mesh(B(0.17 * s, 0.013, 0.19 * s), tipC); tipL.position.set(-0.46 * s, 0, 0); wl.add(tipL);   /* black wingtips */
+  const tipR = new THREE.Mesh(B(0.17 * s, 0.013, 0.19 * s), tipC); tipR.position.set(0.46 * s, 0, 0); wr.add(tipR);
+  const tail = new THREE.Mesh(B(0.16 * s, 0.035, 0.16 * s), tailC); tail.position.set(0, 0.02 * s, -0.28 * s); g.add(tail);
+  const head = new THREE.Mesh(B(0.1 * s, 0.095 * s, 0.14 * s), white); head.position.set(0, 0.05 * s, 0.28 * s); g.add(head);
+  const beak = new THREE.Mesh(B(0.028 * s, 0.028 * s, 0.09 * s), beakC); beak.position.set(0, 0.03 * s, 0.37 * s); g.add(beak);
+  const legs = new THREE.Group();
+  const legL = new THREE.Mesh(B(0.022 * s, 0.09 * s, 0.022 * s), legC); legL.position.set(-0.05 * s, -0.09 * s, 0.05 * s);
+  const legR = legL.clone(); legR.position.x = 0.05 * s;
+  legs.add(legL); legs.add(legR); legs.visible = false; g.add(legs);
+  scene.add(g);
+  const a = { g, wl, wr, head, legs, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 3, flapRate: 5.5 + Math.random() * 1.5,
+    driftPh: ph + Math.random() * 3, driftSp: 0.03 + Math.random() * 0.03,
+    gliding: 0, glideT: 3 + Math.random() * 6,
+    stoop: 0, stoopT: 8 + Math.random() * 22, stoopFrom: null, stoopTo: null,
+    perchAt, preen: 4 + Math.random() * 12 };
+  gulls.push(a);
+  ALWAYS_ANIMALS.push(a);
+  return a;
+}
+/* eight wheel the cove — some low over the water, some along the bluff face */
+makeGull(114, 250, 34, 26, 14,  0.16, 0.0, 1.0);
+makeGull(114, 262, 44, 34, 18, -0.13, 1.7, 1.0);
+makeGull(142, 272, 30, 22, 11,  0.19, 3.3, 0.95);
+makeGull(114, 240, 26, 18, 9,  -0.22, 4.9, 0.9);
+makeGull(90, 282, 38, 28, 16,  0.15, 2.4, 1.0);
+makeGull(158, 252, 24, 20, 13, -0.18, 5.6, 0.95);
+makeGull(120, 302, 40, 30, 19,  0.12, 0.9, 1.0);
+makeGull(100, 230, 28, 24, 10,  0.20, 4.1, 0.9);
+/* three roost on the sea stacks — two on the tall column, one on the squat one */
+makeGull(0, 0, 0, 0, 0, 0, 0.8, 0.95, { x: seaStacks[1].x - 0.55, y: seaStacks[1].top, z: seaStacks[1].z - 0.4, ry: 0.7 });
+makeGull(0, 0, 0, 0, 0, 0, 2.9, 0.9,  { x: seaStacks[1].x + 0.5,  y: seaStacks[1].top, z: seaStacks[1].z + 0.5, ry: 2.4 });
+makeGull(0, 0, 0, 0, 0, 0, 5.1, 0.95, { x: seaStacks[0].x + 0.2,  y: seaStacks[0].top, z: seaStacks[0].z + 0.5, ry: 4.0 });
+function updateGulls(dt, dayF){
+  const active = dayF > 0.5 && wxName !== 'blizzard';
+  for(const b of gulls){
+    setAnimalScale(b, dt, active ? 1 : 0);
+    if (!active) continue;
+    if (b.perchAt){
+      /* roosting on the stack: upright, wings folded, surveying the cove,
+         now and then dipping its head to preen */
+      b.preen -= dt;
+      if (b.preen < -1.6) b.preen = 14 + Math.random() * 18;
+      const preening = b.preen < 0;
+      b.g.position.set(
+        b.perchAt.x + Math.sin(tSim * 0.5 + b.flapPh) * 0.02,
+        b.perchAt.y + Math.sin(tSim * 1.1 + b.flapPh) * 0.015,
+        b.perchAt.z);
+      b.g.rotation.set(preening ? 0.5 : 0,
+        b.perchAt.ry + Math.sin(tSim * 0.33 + b.flapPh) * 0.7, 0);
+      b.wl.rotation.y = 1.25; b.wr.rotation.y = -1.25;
+      b.legs.visible = true;
+      b.head.rotation.y = preening ? 0.2 : Math.sin(tSim * 0.6 + b.flapPh) * 0.9;
+      continue;
+    }
+    b.ph += b.speed * dt;
+    /* glides: hold the wings out and sink slowly, then flap back to it */
+    if (b.gliding > 0){
+      b.gliding -= dt;
+    } else {
+      b.glideT -= dt;
+      if (b.glideT <= 0){ b.gliding = 1.2 + Math.random() * 1.4; b.glideT = 5 + Math.random() * 6; }
+    }
+    /* stoops: sudden plunge to the water, then a pull-up back to the circuit */
+    if (b.stoop <= 0 && b.stoopT > 0) b.stoopT -= dt;
+    if (b.stoopT <= 0 && b.stoop <= 0){
+      const zt = 205 + Math.random() * 110;
+      const wwc = waterHalfWidth(zt);
+      b.stoopFrom = { x: b.g.position.x, y: b.g.position.y, z: b.g.position.z };
+      b.stoopTo = { x: waterCenterX(zt) + (Math.random() - 0.5) * wwc * 1.1, y: WATER_Y + 1.3, z: zt };
+      b.stoop = 0.0001;
+    }
+    if (b.stoop > 0.00005){
+      /* diving — wings swept back */
+      b.stoop += dt / 1.15;
+      const e = b.stoop >= 1 ? 1 : b.stoop * b.stoop * (3 - 2 * b.stoop);
+      b.g.position.set(
+        b.stoopFrom.x + (b.stoopTo.x - b.stoopFrom.x) * e,
+        b.stoopFrom.y + (b.stoopTo.y - b.stoopFrom.y) * e,
+        b.stoopFrom.z + (b.stoopTo.z - b.stoopFrom.z) * e);
+      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
+      const flap = Math.sin(tSim * (b.flapRate + 4) + b.flapPh) * 0.25;
+      b.wl.rotation.y = -0.6 + flap; b.wr.rotation.y = 0.6 - flap;
+      b.g.rotation.z = Math.sin(b.ph * 2) * 0.22;
+      b.legs.visible = false;
+      if (b.stoop >= 1.55){
+        /* pull-up: climb from the water back up to the circuit */
+        b.stoopFrom = { x: b.stoopTo.x, y: WATER_Y + 1.3, z: b.stoopTo.z };
+        b.stoopTo = { x: b.cx + Math.cos(b.ph) * b.rx, y: b.h + 3, z: b.cz + Math.sin(b.ph) * b.rz };
+        b.stoop = -1;
+      }
+    } else if (b.stoop < -0.00005){
+      /* climbing back out of the water */
+      b.stoop += dt / 1.9;
+      const p = clamp01(b.stoop + 1);
+      const e = p * p * (3 - 2 * p);
+      b.g.position.set(
+        b.stoopFrom.x + (b.stoopTo.x - b.stoopFrom.x) * e,
+        b.stoopFrom.y + (b.stoopTo.y - b.stoopFrom.y) * e,
+        b.stoopFrom.z + (b.stoopTo.z - b.stoopFrom.z) * e);
+      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
+      const flap = Math.sin(tSim * b.flapRate + b.flapPh);
+      b.wl.rotation.y = flap * 0.9; b.wr.rotation.y = -flap * 0.9;
+      b.g.rotation.z = 0;
+      b.legs.visible = false;
+      if (b.stoop >= 0){ b.stoop = 0; b.stoopT = 16 + Math.random() * 24; }
+    } else {
+      /* the lazy wheel: drifting circuit, glides, gentle bob */
+      const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
+      const x = b.cx + Math.cos(b.ph) * b.rx * dm;
+      const z = b.cz + Math.sin(b.ph) * b.rz * dm;
+      const y = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh))
+              + Math.sin(b.ph * 2.3 + b.flapPh) * 1.2 - (b.gliding > 0 ? 0.9 : 0);
+      b.g.position.set(x, y, z);
+      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
+      const flap = Math.sin(tSim * b.flapRate + b.flapPh);
+      const amp = b.gliding > 0 ? 0.06 : 0.75;   /* held wings on the glide */
+      b.wl.rotation.y = flap * amp; b.wr.rotation.y = -flap * amp;
+      b.g.rotation.z = 0;
+      b.legs.visible = false;
+    }
+  }
+}
+
 /* ---------- bats (night, over the streets) ---------- */
 const bats = [];
 {
@@ -5167,6 +5421,12 @@ function stepFrame(dt){
       g.m.material.color.set(0xfff0c8).lerp(cGlintNight, nightFNow);
       g.m.material.opacity = (dayF * 0.20 + nightFNow * 0.09) * fl * (1 - wx.dim * 0.6) * (1 - wx.snow * 0.8);
     }
+    /* foam rings breathing around the sea stacks */
+    for(const s of seaStacks){
+      s.foam.material.opacity = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(tSim * 0.9 + s.ph));
+      const fsc = 1 + 0.05 * Math.sin(tSim * 0.9 + s.ph);
+      s.foam.scale.set(fsc, fsc, 1);
+    }
   }
   /* town-hall flag: ragged flutter, stronger in the wind */
   if (flagWave.base){
@@ -5247,6 +5507,7 @@ function stepFrame(dt){
   updateHunt(dt, dayF);
   updateCat(dt, dayF);
   updateBirds(dt, dayF);
+  updateGulls(dt, dayF);
   updateBats(dt, dayF);
   updateFireflies(dt, dayF);
   updatePollinators(dt, dayF);
