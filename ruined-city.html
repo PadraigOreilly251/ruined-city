@@ -46,7 +46,7 @@
   council &mdash; sun, fog, rain, and night, all day. West of town the cathedral stands
   alone in the west meadow, its broken flagging overgrown, one spire still reaching, its nave slowly giving way. A river winds
   through the eastern hills and opens into a sea cove at the map's edge, where old boats still lie
-  wrecked. Everything you see is real and walkable: there is no backdrop wall, only a city lost
+  wrecked. In the open water beyond the cove, at night, something enormous surfaces now and then. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
 </div>
 <div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes</div>
@@ -54934,133 +54934,233 @@ const waterMeshes = [];
 }
 
 /* ---------- the thing in the open sea (night only) ----------
-   A colossal serpent that surfaces only at night. It swims far south of the cove
-   mouth; now and then its back breaks the surface and the head comes up, then it
-   dives and is gone again — 50 m of it, seen from a kilometre of dark water. */
+   A colossal serpent (~50 m) that surfaces only at night, far south of the cove
+   mouth. By day it is wholly out of sight. At night it drifts just under the
+   surface, unseen; now and then it breaches: the head and neck rise first — a
+   low crest of plates, two faintly glowing eyes, a row of lights under the
+   jaw — the back breaks the water as a long ridge of scales with dark dorsal
+   fins, then a wave runs down the spine and the whole body plunges, gone.
+   Debug: window.__RC_SERPENT__.force() forces a breach right now. */
 const serpent = (() => {
-  const SEGS = 17, STEP = 2.8, ss = t => t * t * (3 - 2 * t);
-  const mat = new THREE.MeshLambertMaterial({ color: 0x24403a, emissive: 0x1a382f });   /* dark, self-lit back so the night can read it */
-  const segs = [];
-  const group = new THREE.Group();
+  const SEGS = 26, STEP = 1.9, ss = t => t * t * (3 - 2 * t);
+  /* plateau-crest: 1 across the raised span [c+0.02 … c+0.25], ramping to 0
+     over ±0.26 of body length — used instead of a gaussian so a real span of
+     the back stays up, not just a bump */
+  const crestFn = (t, c) => ss(clamp01((c + 0.50 - t) / 0.30)) * ss(clamp01((t - (c - 0.26)) / 0.30));
+  function radiusAt(t){
+    const P = [[0, 1.8], [0.14, 2.5], [0.5, 2.7], [0.85, 1.05], [1, 0.28]];
+    for (let k = 1; k < P.length; k++)
+      if (t <= P[k][0]){ const a = P[k - 1], b = P[k]; return lerpN(a[1], b[1], ss((t - a[0]) / (b[0] - a[0]))); }
+    return 0.28;
+  }
+  /* procedural scale skin: canvas texture, subtle enough that UV seams don't read */
+  function scaleTex(cBase, cScale, cBlotch, rep){
+    const cv = document.createElement('canvas'); cv.width = cv.height = 256;
+    const g = cv.getContext('2d');
+    g.fillStyle = cBase; g.fillRect(0, 0, 256, 256);
+    g.strokeStyle = cScale; g.lineWidth = 3; g.lineCap = 'round';
+    const cols = 7, sw = 256 / cols;
+    for (let r = 0; r < 9; r++) for (let cc = 0; cc <= cols; cc++){
+      const x = cc * sw - (r % 2 ? sw / 2 : 0) + sw * 0.5;
+      g.beginPath(); g.arc(x, r * 30 - 6, sw * 0.55, Math.PI * 0.2, Math.PI * 0.8); g.stroke();
+    }
+    g.globalAlpha = 0.2; g.fillStyle = cBlotch;
+    for (let i = 0; i < 16; i++){
+      g.beginPath();
+      g.ellipse(hash(i, 11) * 256, hash(i, 23) * 256, 5 + hash(i, 31) * 15, 4 + hash(i, 41) * 9, hash(i, 51) * 3, 0, 6.28);
+      g.fill();
+    }
+    g.globalAlpha = 1;
+    const t = new THREE.CanvasTexture(cv);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, 1); t.anisotropy = 4;
+    return t;
+  }
+  const bodyMat = new THREE.MeshLambertMaterial({ map: scaleTex('#2f4d42', '#43685c', '#1d332c', 2.5), emissive: 0x0c1e17 });
+  const headMat = new THREE.MeshLambertMaterial({ map: scaleTex('#34564a', '#4b7463', '#22392f', 1.5), emissive: 0x0e231b });
+  const finMat  = new THREE.MeshLambertMaterial({ color: 0x2b2115, emissive: 0x120d07, side: THREE.DoubleSide });
+  const eyeMat  = new THREE.MeshBasicMaterial({ color: 0xd6ffe9 });
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0x5fd9bd });
+  function finGeo(w, h, l){
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-w/2, 0, l/2,  w/2, 0, l/2,  0, h, -l/2]), 3));
+    g.computeVertexNormals();
+    return g;
+  }
+
+  const group = new THREE.Group(), headG = new THREE.Group();
+  const humpGeo = new THREE.SphereGeometry(1, 12, 9);
+  const segs = [], radii = [], fins = [];
   for (let i = 0; i < SEGS; i++){
     const t = i / (SEGS - 1);
-    const rad = 2.7 * (1 - t * 0.85) + 0.35;              /* 2.7 m head → 0.7 m tail */
-    const geo = new THREE.CylinderGeometry(rad * 0.72, rad, 3.1, 7);
-    geo.rotateX(Math.PI / 2);                              /* axis along Z so lookAt works */
-    const m = new THREE.Mesh(geo, mat);
-    segs.push(m);
-    group.add(m);
+    const rad = radii[i] = radiusAt(t);
+    const m = new THREE.Mesh(humpGeo, bodyMat);
+    m.scale.set(rad, rad * 0.62, STEP * 1.5);          /* hump 2.85 m long > 1.9 m step — overlaps, no sawtooth */
+    segs.push(m); group.add(m);
+    if (i >= 3 && i < SEGS - 3 && i % 3 === 0)         /* dark dorsal fin ridge, every third hump */
+      fins.push({ m: new THREE.Mesh(finGeo(0.55, 0.5 + 1.6 * (1 - t), 1.9), finMat), seg: i });
   }
-  const headG = new THREE.Group();
-  headG.add(new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.6, 4.6), mat));      /* skull */
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 3.4), mat);
-  jaw.position.set(0, -1.6, 1.0);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xa8ffd8 });           /* faint glowing eyes */
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), eyeMat);
-  const eyeR = eyeL.clone();
-  eyeL.position.set(-1.15, 0.55, 1.9); eyeR.position.set(1.15, 0.55, 1.9);
-  headG.add(jaw, eyeL, eyeR);
+  for (const f of fins) group.add(f.m);
+  /* tail fan: a V of two blades at the very end */
+  const tailFins = [];
+  for (const s of [-1, 1]){
+    const f = new THREE.Mesh(finGeo(0.8, 2.3, 2.2), finMat);
+    group.add(f); tailFins.push({ m: f, side: s });
+  }
+  /* head — forward is +Z after lookAt. Skull, snout, brow, hinged jaw, horns,
+     crest plates, glowing eyes, a row of faint lights under the jaw */
+  const skull = new THREE.Mesh(new THREE.BoxGeometry(3.1, 2.2, 4.4), headMat);
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.4, 2.4), headMat); snout.position.set(0, -0.3, 3.1);
+  const nose  = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.8, 0.9), headMat); nose.position.set(0, 0.1, 4.5);
+  const brow  = new THREE.Mesh(new THREE.BoxGeometry(2.9, 0.5, 1.1), headMat); brow.position.set(0, 1.2, 1.5);
+  const jaw   = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 3.4), headMat); jaw.position.set(0, -1.8, 2.9);
+  const eyeL  = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), eyeMat);
+  const eyeR  = eyeL.clone();
+  eyeL.position.set(-1.35, 0.5, 2.4); eyeR.position.set(1.35, 0.5, 2.4);
+  const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.26, 1.4, 6), finMat);
+  const hornR = hornL.clone();
+  hornL.position.set(-1.0, 1.5, 0.6); hornR.position.set(1.0, 1.5, 0.6);
+  hornL.rotation.x = 0.55; hornR.rotation.x = 0.55;      /* sweeping back */
+  headG.add(skull, snout, nose, brow, jaw, eyeL, eyeR, hornL, hornR);
+  for (let k = 0; k < 5; k++){                            /* crest plates along the crown */
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.6 - k * 0.22, 0.5), finMat);
+    p.position.set(0, 1.5 - k * 0.08, 1.6 - k * 0.85);
+    p.rotation.x = 0.18 + k * 0.14;
+    headG.add(p);
+  }
+  for (let k = 0; k < 3; k++) for (const s of [-1, 1]){   /* throat lights */
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5), glowMat);
+    d.position.set(s * 0.85, -1.15, 3.4 + k * 0.75);
+    headG.add(d);
+  }
   scene.add(group, headG);
 
   const rings = [];
-  for (let i = 0; i < 5; i++){
-    const r = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 20),
+  for (let i = 0; i < 6; i++){
+    const r = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 24),
       new THREE.MeshBasicMaterial({ color: 0xcfe4de, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
     r.rotation.x = -Math.PI / 2; r.visible = false;
     scene.add(r);
     rings.push({ r, t: 99, dur: 1, s0: 5 });
   }
   let ringI = 0;
-  function splash(x, z, s0){
+  function splash(x, z, s0, big){
     const g = rings[ringI++ % rings.length];
     g.r.position.set(x, WATER_Y + 0.12, z);
-    g.r.visible = true; g.t = 0; g.dur = 1.6 + Math.random() * 0.8; g.s0 = s0;
+    g.r.visible = true; g.t = 0; g.dur = (big ? 3.0 : 2.0) + Math.random() * 0.8; g.s0 = s0;
   }
 
-  let state = 'dormant', tState = 0, nextBreach = 15 + Math.random() * 30;
-  let cx = 140, cz = 430, orbitR = 60, phase = Math.random() * 6.28;
-  let surfT = 0, midDone = false, prevHead = false;
-  const pathPts = [];                                        /* head history, newest first */
-  const pts = []; for (let i = 0; i < SEGS; i++) pts.push(new THREE.Vector3());
-  const trail = [];
+  let state = 'dormant', tState = 0, nextBreach = 12 + Math.random() * 20;
+  let cx = 150, cz = 430, orbitR = 60, phase = Math.random() * 6.28, dir = 1;
+  let surfT = 0, justBroke = false, crestDone = false, prevHead = false, nowT = 0;
+  const pathPts = [], pts = [], trail = [];
+  for (let i = 0; i < SEGS; i++) pts.push(new THREE.Vector3());
+  const BASE_Y = -4.2;                                    /* well under the waterline (−0.55) — never an iceberg */
   function seedPath(){
     pathPts.length = 0;
-    for (let k = 140; k >= 0; k--){
-      const a = phase - k * 0.05;
-      pathPts.push(new THREE.Vector3(cx + Math.cos(a) * orbitR, -2, cz + Math.sin(a) * orbitR * 0.72));
+    for (let k = 150; k >= 0; k--){
+      const a = phase - dir * k * 0.045;
+      pathPts.push(new THREE.Vector3(cx + Math.cos(a) * orbitR, BASE_Y, cz + Math.sin(a) * orbitR * 0.72));
     }
   }
   seedPath();
 
   function update(dt){
-    /* splash rings: grow + fade */
+    nowT += dt;
     for (const g of rings){
       if (!g.r.visible) continue;
       g.t += dt;
       const k = g.t / g.dur;
       if (k >= 1){ g.r.visible = false; continue; }
-      const s = g.s0 * (0.5 + k * 2.2);
+      const s = g.s0 * (0.45 + k * 2.4);
       g.r.scale.set(s, s, 1);
-      g.r.material.opacity = 0.5 * (1 - k);
+      g.r.material.opacity = 0.55 * (1 - k);
     }
-    let c = 0, amp = 0;
+    let c = 0.99, amp = 0;
     if (state === 'dormant'){
       tState += dt;
-      phase += dt * 1.5 / orbitR;
+      phase += dir * dt * 3.2 / orbitR;                   /* drifts on, unseen */
       if (tState >= nextBreach){
-        if (nightFNow < 0.8){ tState = 0; nextBreach = 8 + Math.random() * 15; }   /* day — keeps drifting, waits for dark */
-        state = 'surface'; surfT = 0; midDone = false;
-        cx = 50 + Math.random() * 240;   /* x 50..290, well out in the sea */
-        cz = 355 + Math.random() * 150;  /* z 355..505, south of the cove mouth */
-        orbitR = 35 + Math.random() * 55;
-        phase = Math.random() * 6.28;
-        seedPath();
+        if (nightFNow < 0.8){ tState = 0; nextBreach = 8 + Math.random() * 15; }   /* day — waits for dark */
+        else {
+          state = 'surface'; surfT = 0; crestDone = false; justBroke = true;
+          cx = 60 + Math.random() * 220;
+          cz = 360 + Math.random() * 150;
+          orbitR = 40 + Math.random() * 55;
+          dir = Math.random() < 0.5 ? -1 : 1;
+          phase = Math.random() * 6.28;
+          seedPath();
+        }
       }
     } else {
-      surfT += dt / 9;                    /* full breach ≈ 9 s */
-      phase += dt * 4.5 / orbitR;
-      if (surfT >= 1){ state = 'dormant'; tState = 0; nextBreach = 45 + Math.random() * 75; prevHead = false; }
-      else if (surfT < 0.22){ const k = surfT / 0.22; c = 0.06; amp = 6.5 * ss(k); }        /* head + neck rise */
-      else if (surfT < 0.45){ c = 0.16; amp = 6.0; }                                        /* hold, front third up */
-      else if (surfT < 0.72){ const k = (surfT - 0.45) / 0.27; c = 0.16 + k * 0.34; amp = 6.0 * (1 - k * 0.45); }  /* wave runs down the back */
-      else { const k = (surfT - 0.72) / 0.28; c = 0.5; amp = 3.3 * (1 - ss(k)); }           /* plunge */
+      surfT += dt / 10;                                   /* full breach ≈ 10 s */
+      phase += dir * dt * 4.6 / orbitR;
+      if (surfT >= 1){
+        state = 'dormant'; tState = 0; nextBreach = 45 + Math.random() * 75;
+      }
+      else if (surfT < 0.16){ const k = surfT / 0.16; c = 0.05; amp = 3.4 * ss(k); }            /* head + neck rise */
+      else if (surfT < 0.40){ c = 0.12; amp = 5.6 + 0.5 * Math.sin(nowT * 2.1); }               /* hold, gentle bob */
+      else if (surfT < 0.72){ const k = (surfT - 0.40) / 0.32; c = 0.12 + k * 0.68; amp = 5.6 - k * 2.3 + 0.4 * Math.sin(nowT * 2.1); }  /* the wave runs down the back */
+      else { const k = (surfT - 0.72) / 0.28; c = 0.80; amp = 3.4 * (1 - ss(k)); }              /* plunge */
     }
-    /* head follows the circle; body is a 2.8 m-spaced rope along its history */
-    pathPts.unshift(new THREE.Vector3(cx + Math.cos(phase) * orbitR, -2, cz + Math.sin(phase) * orbitR * 0.72));
-    if (pathPts.length > 220) pathPts.length = 220;
+    /* head walks a lazy circle; the body is a rope strung along its recent path */
+    pathPts.unshift(new THREE.Vector3(cx + Math.cos(phase) * orbitR, BASE_Y, cz + Math.sin(phase) * orbitR * 0.72));
+    if (pathPts.length > 240) pathPts.length = 240;
     trail.length = 0;
     let prev = pathPts[0], acc = 0;
     for (let i = 1; i < pathPts.length && trail.length < SEGS; i++){
       const p = pathPts[i];
       let d = prev.distanceTo(p);
       while (acc + d >= STEP && trail.length < SEGS - 1){
-        const k = (STEP - acc) / d;
-        const q = prev.clone().lerp(p, k);   /* point on segment prev→p */
-        trail.push(q); acc = 0; prev = q;
-        d = prev.distanceTo(p);
+        const k = (STEP - acc) / d, q = prev.clone().lerp(p, k);
+        trail.push(q); acc = 0; prev = q; d = prev.distanceTo(p);
       }
       acc += d; prev = p;
     }
     for (let i = 0; i < SEGS; i++){
       const t = i / (SEGS - 1);
       const base = i < trail.length ? trail[i] : pathPts[pathPts.length - 1];
-      pts[i].set(base.x, -2.0 - t * 1.6 + amp * Math.exp(-Math.pow((t - c) / 0.14, 2)), base.z);
+      const lift = amp * crestFn(t, c);
+      const a2 = Math.max(0, i - 1), b2 = Math.min(SEGS - 1, i + 1);
+      const pa = (a2 < trail.length ? trail[a2] : pathPts[pathPts.length - 1]);
+      const pb = (b2 < trail.length ? trail[b2] : pathPts[pathPts.length - 1]);
+      let dx = pb.x - pa.x, dz = pb.z - pa.z;
+      const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const side = Math.sin(t * 10 - c * 10 + nowT * 0.6) * 2.0 * lift * (0.35 + 0.65 * (1 - t));  /* lateral S as the wave travels */
+      pts[i].set(base.x - dz * side, base.y + lift, base.z + dx * side);
     }
     for (let i = 0; i < SEGS; i++){
+      const t = i / (SEGS - 1);
       segs[i].position.copy(pts[i]);
       segs[i].lookAt(i < SEGS - 1 ? pts[i + 1] : pts[i - 1]);
+      segs[i].rotateZ(Math.sin(nowT * 1.6 - t * 9) * 0.08 * (amp / 6));   /* roll wave */
     }
     headG.position.copy(pts[0]);
     headG.lookAt(pts[1]);
-    if (!midDone && state === 'surface' && surfT > 0.55){ midDone = true; splash(pts[6].x, pts[6].z, 8); }
+    jaw.rotation.x = -0.1 * clamp01(amp / 5) * (0.6 + 0.4 * Math.sin(nowT * 1.3));   /* eases open when it comes up */
+    for (const f of fins){
+      const i = f.seg;
+      f.m.position.copy(pts[i]); f.m.position.y += radii[i] * 0.4;
+      f.m.lookAt(i < SEGS - 1 ? pts[i + 1] : pts[i - 1]);
+    }
+    for (const f of tailFins){
+      f.m.position.copy(pts[SEGS - 1]);
+      f.m.lookAt(pts[SEGS - 2]);
+      f.m.rotateZ(f.side * 0.55);
+    }
+    group.visible = headG.visible = (state === 'surface');   /* fully hidden when under the water — no daytime iceberg */
+    if (justBroke){ splash(pts[0].x, pts[0].z, 16, true); justBroke = false; }
+    if (state === 'surface' && !crestDone && surfT > 0.5){ crestDone = true; splash(pts[13].x, pts[13].z, 18, true); }
     const headY = pts[0].y;
-    if (headY > WATER_Y && !prevHead){ splash(pts[0].x, pts[0].z, 7); }
-    else if (headY < WATER_Y && prevHead){ splash(pts[0].x, pts[0].z, 11); }
+    if (headY > WATER_Y && !prevHead) splash(pts[0].x, pts[0].z, 13, true);
+    else if (headY < WATER_Y && prevHead) splash(pts[0].x, pts[0].z, 15, true);
     prevHead = headY > WATER_Y;
   }
-  return { update, force(){ state = 'surface'; surfT = 0; midDone = false; cx = 150; cz = 390; orbitR = 55; phase = Math.random() * 6.28; seedPath(); },
-           info(){ return { state, surfT: +surfT.toFixed(2), cx: Math.round(cx), cz: Math.round(cz) }; } };
-})() ;
+  return { update,
+    force(){ state = 'surface'; surfT = 0; crestDone = false; cx = 150; cz = 390; orbitR = 55; dir = 1; phase = Math.random() * 6.28; seedPath(); },
+    info(){ return { state, surfT: +surfT.toFixed(2), cx: Math.round(cx), cz: Math.round(cz) }; },
+    head(){ return { x: +pts[0].x.toFixed(1), y: +pts[0].y.toFixed(1), z: +pts[0].z.toFixed(1) }; },
+    pts(){ return pts.map(p => [+p.x.toFixed(1), +p.y.toFixed(1), +p.z.toFixed(1)]); } };
+})();
 window.__RC_SERPENT__ = serpent;   /* debug: force() triggers a breach now */
 
 /* ---------- drifting foam streaks (flow downstream toward the lake, +z) ---------- */
