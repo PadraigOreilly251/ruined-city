@@ -3241,7 +3241,7 @@ function applySeasonColors(){
 }
 function updateSeasons(dt){
   const target = Math.floor(simDay) % 4;
-  if (target !== season){ season = target; applySeasonColors(); }
+  if (target !== season){ season = target; applySeasonColors(); weatherSeasonFit(); }
   if (seasonT < 1){
     seasonT = Math.min(1, seasonT + dt / 40);
     const e = seasonT * seasonT * (3 - 2 * seasonT);
@@ -3272,6 +3272,7 @@ function updateSeasons(dt){
     }
     for (let i = 0; i < LEAF_G.length; i++) LEAF_G[i].color.copy(leafTo[i]);
     seasonMix.spring = season === 0; seasonMix.summer = season === 1; seasonMix.autumn = season === 2; seasonMix.winter = season === 3;
+    setTimeout(weatherSeasonFit, 0);   /* #day snap: refit once the weather vars exist */
   }
 }
 
@@ -3752,6 +3753,7 @@ const WX_STATES = {
   rain:   { clouds: 1.0,  fogF: 0.66, rain: 0.7, wind: 1.0, dim: 0.62, snow: 0.0 },
   storm:  { clouds: 1.15, fogF: 0.55, rain: 1.0, wind: 1.6, dim: 0.48, snow: 0.0 },
   snow:   { clouds: 0.85, fogF: 0.72, rain: 0.0, wind: 0.6, dim: 0.9,  snow: 1.0 },
+  blizzard: { clouds: 1.05, fogF: 0.18, rain: 0.0, wind: 2.0, dim: 0.52, snow: 1.4 },   /* winter only: whiteout fog + driven snow */
 };
 const wx = { clouds: 0.35, fogF: 1.0, rain: 0.0, wind: 0.5, dim: 1.0, snow: 0.0 };
 let wxName = 'clear', wxDwell = 50 + Math.random() * 50, stormFlash = 0, nextFlash = 4;
@@ -3764,12 +3766,35 @@ const BASE_FOG = { near: 78, far: 408 };   /* ~15% less fog than 90/480 — clea
 const uiEl = document.getElementById('ui');
 let uiNight = false;   /* HUD contrast toggle (dark text is unreadable on the night sky) */
 
+/* season-weighted weather: snow is a winter/late-autumn thing, blizzard is winter-only,
+   summer gets no snow, storms read as thunder in summer, winter is pale and snowy. */
+const SEASON_WX = [
+  /* spring: mild and fresh — rain likelier than the last snow of the year */
+  { clear: 0.30, cloudy: 0.18, fog: 0.12, rain: 0.24, storm: 0.10, snow: 0.06 },
+  /* summer: bright and warm — no snow, storms as afternoon thunder */
+  { clear: 0.40, cloudy: 0.22, fog: 0.05, rain: 0.17, storm: 0.16 },
+  /* autumn: grey and windy, wet — first snow flurries */
+  { clear: 0.18, cloudy: 0.22, fog: 0.14, rain: 0.24, storm: 0.10, snow: 0.12 },
+  /* winter: cold and pale — snow the norm, blizzard the extreme */
+  { clear: 0.14, cloudy: 0.20, fog: 0.10, rain: 0.08, storm: 0.04, snow: 0.34, blizzard: 0.10 },
+];
+function rollWeather(){
+  const tbl = SEASON_WX[season];
+  let r = Math.random();
+  for (const k in tbl){ r -= tbl[k]; if (r <= 0) return k; }
+  return 'clear';
+}
+/* when the season flips: if the running weather no longer belongs to it (snow in
+   summer, blizzard in spring), cut the episode short instead of letting it run out */
+function weatherSeasonFit(){
+  if (wxDwell >= 1e8) return;   /* pinned #wx=: the user's word wins */
+  if (!SEASON_WX[season][wxName]) wxDwell = Math.min(wxDwell, 5 + Math.random() * 10);
+}
+
 function updateWeather(dt){
   wxDwell -= dt;
   if (wxDwell <= 0){
-    const names = Object.keys(WX_STATES);
-    const roll = Math.random();
-    wxName = roll < 0.32 ? 'clear' : roll < 0.50 ? 'cloudy' : roll < 0.62 ? 'fog' : roll < 0.74 ? 'rain' : roll < 0.84 ? 'snow' : 'storm';
+    wxName = rollWeather();
     wxDwell = 45 + Math.random() * 70;
   }
   const tgt = WX_STATES[wxName];
@@ -3991,21 +4016,22 @@ let snowMesh;
 function updateSnow(dt){
   snowMesh.visible = wx.snow > 0.02;
   if (!snowMesh.visible) return;
-  snowMesh.material.opacity = 0.92 * wx.snow;
+  snowMesh.material.opacity = Math.min(1, 0.92 * wx.snow);
   const m4 = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Quaternion();
   const d = snowMesh.userData.d;
+  const gust = 1 + Math.max(0, wx.snow - 1) * 1.5;   /* blizzard: fall harder, get driven harder */
   for(let i = 0; i < SNOW_N; i++){
     const f = d[i];
-    f.y -= f.sp * dt;
-    f.ph += dt * (0.7 + f.amp * 0.35);
-    f.x += Math.sin(f.ph) * f.amp * dt + wx.wind * 1.6 * dt;
+    f.y -= f.sp * gust * dt;
+    f.ph += dt * (0.7 + f.amp * 0.35) * gust;
+    f.x += Math.sin(f.ph) * f.amp * dt * gust + wx.wind * 1.6 * dt * gust;
     if (f.y < -0.6){
       f.y = 30 + Math.random() * 10;
       f.x = controls.target.x + (Math.random()-0.5) * 200;
       f.z = controls.target.z + (Math.random()-0.5) * 200;
     }
     p.set(f.x, f.y, f.z);
-    const sc = 0.55 + f.amp * 0.35;
+    const sc = (0.55 + f.amp * 0.35) * (1 + Math.max(0, wx.snow - 1) * 1.2);   /* blizzard: bigger, heavier flakes */
     s.set(sc, sc, sc); m4.compose(p, q, s);
     snowMesh.setMatrixAt(i, m4);
   }
@@ -5072,7 +5098,7 @@ function updateUI(dt){
   if (uiT > 0) return;
   uiT = 0.5;
   const hh = Math.floor(simHour), mm = Math.floor((simHour - hh) * 60);
-  const wxTxt = { clear: 'clear', cloudy: 'overcast', fog: 'fog', rain: 'rain', snow: 'snow', storm: 'storm' }[wxName];
+  const wxTxt = { clear: 'clear', cloudy: 'overcast', fog: 'fog', rain: 'rain', snow: 'snow', storm: 'storm', blizzard: 'blizzard' }[wxName];
   clockEl.textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${wxTxt} · ${SEASON_NAMES[season]}`;
   /* UI text colour adapts to night */
   const dark = simHour < 5.5 || simHour > 19.5;
@@ -5237,7 +5263,12 @@ function animate(){
   renderer.render(scene, camera);
 }
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
-window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
+window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, wxDwell: +(wxDwell >= 1e8 ? 1e9 : wxDwell).toFixed(1), snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
+window.__RC_WX__ = {   /* debug: season/weather inspection + test hooks */
+  roll: () => { wxName = rollWeather(); return wxName; },
+  jumpDay: (d) => { simDay = d; },
+  seasonName: () => SEASON_NAMES[season],
+};
 window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
 
 window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt now */

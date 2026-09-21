@@ -43,7 +43,7 @@ A full day and night passes every four minutes; a new season each day
 |---|---|---|
 | `#time=` | `0`–`24` | Starting time of day, e.g. `#time=21` |
 | `#day=` | `0`–`3` | Start in a season: `0` spring, `1` summer, `2` autumn, `3` winter |
-| `#wx=` | `clear` `cloudy` `fog` `rain` `snow` `storm` | Force the weather |
+| `#wx=` | `clear` `cloudy` `fog` `rain` `snow` `storm` `blizzard` | Force the weather |
 | `#cam=` | `hero` `street` `aerial` `river` `lake` `tower` `meadow` | Camera preset |
 | `#snap` | — | Always use a camera preset (not just on load) |
 
@@ -78,10 +78,13 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
   lit windows, streetlamps that flicker at dusk, a few that sputter back to
   life, lighthouse beam, stars and shooting stars on clear nights.
 - **Seasons** — one season per in-game day. Foliage, grass, bushes and
-  wildflowers ease to seasonal palettes; flowers die back in winter.
+  wildflowers ease to seasonal palettes; flowers die back in winter. Weather
+  rolls are weighted per season: no snow in summer, blizzards only in winter,
+  snow likelier in winter than anywhere else.
 - **Weather** — clear, cloudy, fog, rain (per-drop length/slant variance),
   snow (falling + accumulating ground/roof/landmark caps), storm (darker sky,
-  heavier rain, lightning flashes).
+  heavier rain, lightning flashes), blizzard (winter whiteout: dense fog to
+  ~120 m, driving snow that falls and blows harder, near-gale wind).
 - **Wildlife** — deer, rabbits, foxes and crows roam; fireflies on clear
   summer nights; autumn leaves drift down; snow footprints: a deer trail from
   the meadow into town and a fox trail along the avenue.
