@@ -44,7 +44,7 @@
   <p>Decades after the last bus left, the city has become a wild place. Deer graze the old
   fields, foxes hunt after dark, crows wheel over broken towers, and the weather keeps its own
   council &mdash; sun, fog, rain, and night, all day. West of town the cathedral stands
-  alone on its stone podium, one spire still reaching, its nave slowly giving way. A river winds
+  alone in the west meadow, its broken flagging overgrown, one spire still reaching, its nave slowly giving way. A river winds
   through the eastern hills and opens into a lake at the map's edge, where old boats still lie
   wrecked. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
@@ -54618,7 +54618,7 @@ function columns(cells, material, noShadow){
                      at x,z ∈ {0,±40,±80} with worn lane dashes.
    Clock tower ..... (24,−24), cleared plaza radius 14.
    Cathedral ....... (−120, 80) medieval, NW of town on a raised stone
-                     podium (ground-anchored: terrain outside |x|<96 steps), facade to the open meadow, one spire
+                     meadow-level, grass to the walls, facade to the open meadow, one spire
                      broken at the tip, south tower collapsed at 15 m, east end
                      caving in, tree through the broken nave roof. Reserved lot.
    Anchor towers ... (60, 60) 14-storey near-intact; (−20,−20) half-collapsed;
@@ -55206,7 +55206,7 @@ const CLEAR_ZONES = [
   { x: 60,  z: 60,  r: 15 },   /* anchor tower A (tall) */
   { x: -20, z: -20, r: 15 },   /* anchor tower B (half-collapsed) */
   { x: 20,  z: 60,  r: 15 },   /* anchor tower C (open roof) */
-  { x: -120, z: 81, r: 38 },   /* cathedral, NW meadow podium */
+  { x: -120, z: 81, r: 38 },   /* cathedral, NW meadow */
 ];
 const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
 
@@ -56481,7 +56481,8 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
       (hash(seed * 1.3, seed * 0.4) - 0.5) * 0.05);
     return c;
   };
-  const GLASS = 0x20242a, SHADOW = 0x3f3a30;  /* dark glass / interior */
+  const GLASS = 0x20242a, SHADOW = 0x3f3a30;  /* dark glass / interior voids */
+  const FLOOR = 0x8f8875;                      /* worn nave flagging — stone, not a black tarp */
 
   /* --- nave shell (x -33…-7, z 13…27, h 11; east side is failing) --- */
   cells.push({ x: -29.5, z: 13, y: 5.5, sy: 11, sx: 7, sz: 1.1, color: st(801, 0.26) });   /* north w, west of arm */
@@ -56498,7 +56499,7 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
   cells.push({ x: -7, z: 14.5, y: 4.5, sy: 9, sx: 1.1, sz: 3, color: st(811, 0.2) });      /* east wall stubs */
   cells.push({ x: -7, z: 25.5, y: 3, sy: 6, sx: 1.1, sz: 3, color: st(812, 0.18) });
   /* interior: dark floor + column rows (visible through roof hole + broken walls) */
-  cells.push({ x: -20.25, z: 20, y: 0.35, sy: 0.3, sx: 24.5, sz: 12.8, color: SHADOW });
+  cells.push({ x: -20.25, z: 20, y: 0.04, sy: 0.22, sx: 24.5, sz: 12.8, color: FLOOR });
   for (const xi of [-29, -24.5, -20, -15.5]) for (const zi of [16.5, 23.5]){
     cells.push({ x: xi, z: zi, y: 3, sy: 6, sx: 1, sz: 1, color: 0x6b6456 });
     cells.push({ x: xi, z: zi, y: 6.3, sy: 0.5, sx: 1.5, sz: 1.5, color: 0x76705f });
@@ -56528,7 +56529,7 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
   cells.push({ x: -20, z: 6, y: 14.5, sy: 1.6, sx: 5.5, sz: 1, color: st(838, 0.25) });
   cells.push({ x: -20, z: 6, y: 15.9, sy: 1.5, sx: 2.4, sz: 1, color: st(839, 0.26) });
   cells.push({ x: -20, z: 6, y: 17, sy: 1.1, sx: 0.7, sz: 0.7, rz: 0.15, color: st(840, 0.2) });  /* crocket, snapped */
-  cells.push({ x: -20, z: 9.5, y: 0.3, sy: 0.25, sx: 11.4, sz: 6.4, color: SHADOW });
+  cells.push({ x: -20, z: 9.5, y: 0.05, sy: 0.2, sx: 11.4, sz: 6.4, color: FLOOR });
   /* south arm — west half intact */
   cells.push({ x: -26, z: 30.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(841, 0.23) });
   cells.push({ x: -20, z: 30.5, y: 6, sy: 12, sx: 1.1, sz: 7.4, color: st(842, 0.24) });
@@ -56541,7 +56542,7 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
   /* south arm — east half fallen: broken wall stubs, dark floor, rubble run */
   cells.push({ x: -14, z: 29, y: 2.5, sy: 5, sx: 1.1, sz: 4.4, rz: 0.12, color: st(849, 0.16) });
   cells.push({ x: -18, z: 33.6, y: 1.8, sy: 3.6, sx: 4.4, sz: 1.1, ry: 0.2, color: st(850, 0.15) });
-  cells.push({ x: -17, z: 30.5, y: 0.3, sy: 0.25, sx: 6, sz: 7, color: SHADOW });
+  cells.push({ x: -17, z: 30.5, y: 0.05, sy: 0.2, sx: 6, sz: 7, color: FLOOR });
   cells.push({ x: -15, z: 31.8, y: 0.55, sy: 0.45, sx: 6.4, sz: 5.6, ry: 0.5, color: st(851, 0.15) });
   cells.push({ x: -12.5, z: 29.5, y: 0.5, sy: 0.9, sx: 5.5, sz: 3.4, ry: 0.2, color: st(852, 0.12) });
   cells.push({ x: -11, z: 32.5, y: 0.4, sy: 0.7, sx: 4, sz: 2.6, ry: -0.35, color: st(853, 0.11) });
@@ -56640,7 +56641,7 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
   /* --- chancel + apse (east end, caving in) --- */
   cells.push({ x: -5, z: 14.5, y: 4.5, sy: 9, sx: 4.5, sz: 1.1, color: st(981, 0.2) });
   cells.push({ x: -5, z: 25, y: 3, sy: 6, sx: 4, sz: 1.1, rz: 0.08, color: st(982, 0.18) });
-  cells.push({ x: -4.5, z: 20, y: 0.3, sy: 0.25, sx: 6, sz: 12, color: SHADOW });
+  cells.push({ x: -4.5, z: 20, y: 0.05, sy: 0.2, sx: 6, sz: 12, color: FLOOR });
   cells.push({ x: -1.5, z: 20, y: 4.5, sy: 9, sx: 4.5, sz: 10, color: st(983, 0.22) });       /* apse drum */
   for (const [ox, oz] of [[0.9, 16.4], [0.9, 23.6], [-4.6, 16.4], [-4.6, 23.6]])
     cells.push({ x: ox, z: oz, y: 4.2, sy: 8.5, sx: 2, sz: 2, color: st(984, 0.2) });          /* round-ish corners */
@@ -56677,34 +56678,53 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
   /* moved out of town to the west meadow (-120, 20). Outside |x|<96 the terrain
      terraces (steps up to ~2 m across a lot this size), so the whole building is
      ground-anchored at runtime: sample groundH over the footprint, sit it on a
-     raised stone podium. Real cathedrals got podiums too. */
+     ground: grass grows to the walls, broken flagging around it (see below). */
   const CMX = -120, CMZ = 80, DX = CMX - CX, DZ = CMZ - CZ;  /* west NW meadow, outside the deer/fox band */
-  /* terrain here: flat 0 across most of the lot, a 1.85 bank ~2.5 m beyond the west edge.
-     Keep the plaza only ~0.5 m above the meadow — like the town's buildings — and the
-     8 m skirt (below) buries the west bank, so nothing floats and nothing dominates. */
-  const BASE = 0.55;
+  /* No raised plaza — that was the sore thumb. The ruin sits directly on the
+     meadow with grass against the walls, like every other building here.
+     What survives of the old cloister paving is a sparse, overgrown flagstone
+     field around it, densest on the processional axis west of the portal. */
+  const BASE = -0.05;
   /* close near-ground float gaps: floors/rubble sat 0.2-0.65 m above the plain */
   for (const c of cells){
     const yy = c.y || 0, sy = c.sy || 1, top = yy + sy / 2, bot = yy - sy / 2;
     if (bot > 0.02 && bot < 1.5){ c.sy = top; c.y = top / 2; }
   }
-  /* the podium: buried deep; its flanks hidden by the earth terraces below */
-  cells.push({ x: CX, z: CZ + 1, y: -4, sy: 8, sx: 48, sz: 38, color: st(931, 0.1) });
-  cells.push({ x: CX, z: CZ + 1, y: -0.05, sy: 0.1, sx: 47, sz: 37, color: st(932, 0.22) });
-  /* soft earth berm hugging the podium: hides the crisp stone edge so the plaza
-     emerges from the meadow instead of sitting on it like a table */
-  const BERM = [0x77774d, 0x6b6c45];
-  for (let k = 0; k < 2; k++){
-    const c = new THREE.Color(BERM[k]);
-    c.offsetHSL((hash(771 + k * 17, 3.3) - 0.5) * 0.02, 0, (hash(772 + k * 13, 9.1) - 0.5) * 0.04);
-    cells.push({ x: CX, z: CZ + 1, y: -0.5 + k * 0.25, sy: 0.5,
-      sx: 48 + 5 - k * 2.6, sz: 38 + 5 - k * 2.6, color: c.getHex() });
-  }
   for (const c of cells){ c.x += DX; c.z += DZ; c.y = (c.y || 0) + BASE; }
+  /* --- ruined flagstones, world coords (pushed after the shift) --- */
+  const flag = s => { const c = new THREE.Color(0x8f8a76);
+    c.offsetHSL((hash(s, 2.2) - 0.5) * 0.02, (hash(s, 5.1) - 0.5) * 0.05, (hash(s, 8.3) - 0.5) * 0.1 - 0.02);
+    return c.getHex(); };
+  for (let i = 0; i < 34; i++){                          /* processional axis, west of the facade */
+    const s = 1.5 + hash(i, 31) * 1.3;
+    cells.push({ x: -137 - hash(i, 11) * 12, z: 80 + (hash(i, 12) - 0.5) * 8,
+      y: 0.02, sy: 0.12, sx: s, sz: s * (0.8 + hash(i, 15) * 0.5),
+      ry: (hash(i, 16) - 0.5) * 0.5, color: flag(i * 3 + 1) });
+  }
+  for (let i = 0; i < 46; i++){                          /* mossy field: south + east, hugging the ruin */
+    if (hash(i, 41) > 0.6) continue;
+    const px = -138 + hash(i, 21) * 42, pz = 98 + hash(i, 22) * 9;
+    if (px > -136 && px < -103 && pz < 100) continue;     /* never inside the building */
+    const s = 1.1 + hash(i, 23) * 1.3;
+    const c = new THREE.Color(flag(i * 7 + 5));
+    c.offsetHSL(0.02, 0, (hash(i, 27) - 0.5) * 0.06 - 0.05);   /* soil + moss overtone */
+    cells.push({ x: px, z: pz, y: 0.02, sy: 0.1, sx: s, sz: s * (0.7 + hash(i, 24) * 0.6),
+      ry: (hash(i, 25) - 0.5) * 0.6, color: c.getHex() });
+  }
+  for (let i = 0; i < 30; i++){                          /* thin scatter hugging the walls */
+    if (hash(i, 61) > 0.5) continue;
+    const side = i % 4;
+    const along = -134 + hash(i, 26) * 29;
+    const px = side === 0 ? -137.5 - hash(i, 27) * 2 : side === 1 ? -102.5 + hash(i, 27) * 2 : along;
+    const pz = side === 2 ? 96.5 + hash(i, 27) * 2 : side === 3 ? 62.5 - hash(i, 27) * 2 : 63 + hash(i, 28) * 33;
+    const s = 0.8 + hash(i, 29) * 1.2;
+    cells.push({ x: px, z: pz, y: 0.02, sy: 0.1, sx: s, sz: s * (0.7 + hash(i, 30) * 0.6),
+      ry: (hash(i, 31) - 0.5) * 0.7, color: flag(i * 11 + 9) });
+  }
   columns(cells, lamber(0xffffff));
-  BLOCKS.push({ x: CMX, z: CMZ + 1, w: 56, d: 46 });   /* keep trees off podium + berm */
+  BLOCKS.push({ x: CMX, z: CMZ, w: 36, d: 42 });   /* keep trees off the building only */
   /* the reclamation: a tree up through the broken nave roof, another through the fallen transept */
-  tree(CMX + 10.5, 21.5 + DZ, 12.5, 1.5, 9417, 0.55 + BASE);
+  tree(CMX + 10.5, 21.5 + DZ, 12.5, 1.5, 9417);
   treeRoof(CMX + 2.5, 30.5 + DZ, 0.6 + BASE, 7, 9418);
   /* candles in the broken nave — visible at night through the roofless bay */
   const candle = new THREE.PointLight(0xffb45e, 0, 46, 2);
@@ -56719,7 +56739,7 @@ let CATH_FLAME_MAT = null;  /* shared emissive for the votive flames */
     const fx = CMX + 9.5 + Math.cos(a) * r, fz = 20 + DZ + Math.sin(a) * r * 1.6;
     const hh = 0.4 + hash(i, 5) * 0.55;
     const wax = new THREE.Mesh(new THREE.BoxGeometry(0.24, hh, 0.24), waxMat);
-    wax.position.set(fx, 0.5 + BASE + hh / 2, fz);
+    wax.position.set(fx, BASE + 0.02 + hh / 2, fz);
     const fl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.2), CATH_FLAME_MAT);
     fl.position.set(fx, wax.position.y + hh / 2 + 0.12, fz);
     scene.add(wax); scene.add(fl);
