@@ -67,6 +67,7 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
 | Water tower | (88, −62) | Tilted, on its last legs (city). |
 | Water tower 2 | (−6, 132) | Lone rusted tank, south meadow (deliberately isolated). |
 | **Lighthouse** | (72, 195) | Banded rust rings, gallery, dome — **reads too clean for an abandoned world**: needs weathering (rust streaks, broken gallery rail, dead/dark lamp, overgrown base). Currently on the cove's west shore. |
+| **The sea thing** | open sea, z 355–505 | Enormous serpent (~50 m) that surfaces only at night, now and then breaking the surface for a few seconds before diving. Random patrol, uncatchable — ambient presence, not a visitable landmark. |
 | Radio mast | — | Thin mast on the skyline. |
 | Ferris wheel | — | Rust-red, east of town. |
 | Boat graveyard | cove shore | Beached wrecks + sunken hull + ruined jetty. |

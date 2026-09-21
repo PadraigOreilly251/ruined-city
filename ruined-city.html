@@ -54637,6 +54637,12 @@ function columns(cells, material, noShadow){
                      sea beyond (no shore to the south — it just goes on).
                      Water surface at WATER_Y (−0.55); sunken boat at
                      (≈118,252), beached wrecks + ruined jetty on the shore.
+   The sea thing ... ~ (150, 390) open sea, south of the cove mouth. An
+                     enormous serpent (~50 m) that surfaces only at night —
+                     now and then its back breaks the surface and the head
+                     comes up, then it dives and is gone. Random patrol;
+                     ambient, not visitable. `__RC_SERPENT__.force()` for a
+                     guaranteed breach (debug).
    Bridge .......... the z=0 avenue crosses the river at x = BRIDGE_X
                      (≈117); middle span collapsed into the water.
    Water tower ..... (88,−62), tilted.
@@ -54684,12 +54690,17 @@ function waterHalfWidth(z){
 function groundH(x, z){
   /* city: flat */
   if (Math.abs(x) < 96 && Math.abs(z) < 96) return 0;
-  /* rolling hills beyond, quantized into voxel steps */
+  /* rolling hills beyond, quantized into voxel steps — the steps fade out
+     toward the south so the cove coastline stays smooth, not jagged terraces */
   const d = Math.max(Math.abs(x), Math.abs(z));
   let h = Math.pow(clamp01((d - 96) / 190), 1.35) * (13 + 30 * fbm(x*0.016 + 3.7, z*0.016 + 9.1));
-  h = Math.floor(h / 2.2) * 2.2;
+  const stepF = 1 - clamp01((z - 118) / 30);               /* 1 = stepped, 0 = smooth */
+  h = lerpN(h, Math.floor(h / 2.2) * 2.2, stepF);
   /* gentle terraced undulation in the meadows (outside the flat city) */
-  if (d > 94) h += Math.floor(((fbm(x*0.05 + 31, z*0.05 + 17) - 0.5) * 1.5) / 0.35) * 0.35;
+  if (d > 94){
+    const u = (fbm(x*0.05 + 31, z*0.05 + 17) - 0.5) * 1.5;
+    h += lerpN(u, Math.floor(u / 0.35) * 0.35, stepF);
+  }
   h = Math.max(0, h - 2.2);
   /* cove shore shelf: terrace the surrounding hills down to a low plain so the
      bay reads as a natural basin instead of a deep pit, and the sea takes over
@@ -54706,16 +54717,17 @@ function groundH(x, z){
       }
     }
   }
-  /* river + lake: carve the bed, slope the banks down to the waterline */
+  /* river + cove: carve the bed, slope the banks down to the waterline */
   const ww = waterHalfWidth(z);
   if (ww > 0.4){
     const rd = Math.abs(x - waterCenterX(z));
+    const mouthT = clamp01((ww - 10) / 10);               /* 0 narrow river, 1 wide bay */
     if (rd < ww){
       const t = clamp01(1 - rd / Math.max(ww, 0.001));      /* 1 at the centre */
-      const maxDepth = ww > 20 ? 2.6 : 1.3;                 /* lake deeper than river */
+      const maxDepth = lerpN(1.3, 2.6, mouthT);            /* cove deeper than river */
       return WATER_Y - 0.3 - t*t*maxDepth;
     }
-    const bankW = ww > 20 ? 10 : 6;                          /* wide shelves at the lake */
+    const bankW = lerpN(6, 10, mouthT);                    /* wide shelves at the cove */
     if (rd < ww + bankW){
       const t = clamp01(1 - (rd - ww) / bankW);              /* 1 at shore, 0 out on land */
       return lerpN(h, WATER_Y + 0.05, t*t);
@@ -54748,7 +54760,7 @@ const EARTH_C = new THREE.Color('#5d5748');
 /* ---------- ground (one big plane, voxel-stepped, vertex-coloured) ---------- */
 let groundGeo = null;
 {
-  const SIZE = 660, SEG = 176;
+  const SIZE = 660, SEG = 300;   /* 2.2 m grid — matches the 2.2 m height step, smooths the cove shoreline */
   groundGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
   const geo = groundGeo;
   geo.rotateX(-Math.PI/2);
@@ -54876,7 +54888,12 @@ const splashMat = new THREE.MeshBasicMaterial({ color: 0xbfd0d8, transparent: tr
 
 /* ---------- river + lake water: a ribbon following the shoreline ---------- */
 const waterRows = [];
-for (let z = -334; z <= 330; z += 3){
+for (let z = -334; z <= 148; z += 3){   /* river: 3 m rows (straight banks) */
+  const ww = waterHalfWidth(z);
+  if (ww < 0.4) continue;
+  waterRows.push({ z, cx: waterCenterX(z), ww });
+}
+for (let z = 151; z <= 328; z += 1){    /* cove: 1 m rows — the widening banks curve, keep the edge smooth */
   const ww = waterHalfWidth(z);
   if (ww < 0.4) continue;
   waterRows.push({ z, cx: waterCenterX(z), ww });
@@ -54897,32 +54914,154 @@ function buildWaterMesh(rows){
   return geo;
 }
 const waterMat = new THREE.MeshLambertMaterial({
-  color: 0x4d707c, transparent: true, opacity: 0.72, side: THREE.DoubleSide });
-const seaMat = new THREE.MeshLambertMaterial({
-  color: 0x3a6a8c, transparent: true, opacity: 0.8, side: THREE.DoubleSide, fog: false });
+  color: 0x406e84, transparent: true, opacity: 0.78, side: THREE.DoubleSide, fog: false });
 const waterMeshes = [];
-/* river: freshwater, fogged */
+/* one continuous ribbon: river source to the cove mouth. A single material
+   all the way, so the river flows into the sea with no seam */
 {
-  const rows = waterRows.filter(r => r.z < 150);
-  const g = buildWaterMesh(rows);
-  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
-}
-/* cove + open sea: seawater, no fog so the horizon stays a clean line */
-{
-  const rows = waterRows.filter(r => r.z >= 150);
-  const g = buildWaterMesh(rows);
-  if (g){ const m = new THREE.Mesh(g, seaMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
+  const g = buildWaterMesh(waterRows);
+  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows: waterRows }); }
 }
 
 /* ---------- open sea beyond the cove mouth ---------- */
 {
   const seaGeo = new THREE.PlaneGeometry(1700, 1000, 1, 1);
-  const sea = new THREE.Mesh(seaGeo, seaMat);
+  const sea = new THREE.Mesh(seaGeo, waterMat);
   sea.rotation.x = -Math.PI/2;
   sea.position.set(60, WATER_Y - 0.02, 330 + 499);   /* z 330..1330, x -790..910 */
   sea.receiveShadow = true;
   scene.add(sea);
 }
+
+/* ---------- the thing in the open sea (night only) ----------
+   A colossal serpent that surfaces only at night. It swims far south of the cove
+   mouth; now and then its back breaks the surface and the head comes up, then it
+   dives and is gone again — 50 m of it, seen from a kilometre of dark water. */
+const serpent = (() => {
+  const SEGS = 17, STEP = 2.8, ss = t => t * t * (3 - 2 * t);
+  const mat = new THREE.MeshLambertMaterial({ color: 0x24403a, emissive: 0x1a382f });   /* dark, self-lit back so the night can read it */
+  const segs = [];
+  const group = new THREE.Group();
+  for (let i = 0; i < SEGS; i++){
+    const t = i / (SEGS - 1);
+    const rad = 2.7 * (1 - t * 0.85) + 0.35;              /* 2.7 m head → 0.7 m tail */
+    const geo = new THREE.CylinderGeometry(rad * 0.72, rad, 3.1, 7);
+    geo.rotateX(Math.PI / 2);                              /* axis along Z so lookAt works */
+    const m = new THREE.Mesh(geo, mat);
+    segs.push(m);
+    group.add(m);
+  }
+  const headG = new THREE.Group();
+  headG.add(new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.6, 4.6), mat));      /* skull */
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 3.4), mat);
+  jaw.position.set(0, -1.6, 1.0);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xa8ffd8 });           /* faint glowing eyes */
+  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6), eyeMat);
+  const eyeR = eyeL.clone();
+  eyeL.position.set(-1.15, 0.55, 1.9); eyeR.position.set(1.15, 0.55, 1.9);
+  headG.add(jaw, eyeL, eyeR);
+  scene.add(group, headG);
+
+  const rings = [];
+  for (let i = 0; i < 5; i++){
+    const r = new THREE.Mesh(new THREE.RingGeometry(0.7, 1, 20),
+      new THREE.MeshBasicMaterial({ color: 0xcfe4de, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+    r.rotation.x = -Math.PI / 2; r.visible = false;
+    scene.add(r);
+    rings.push({ r, t: 99, dur: 1, s0: 5 });
+  }
+  let ringI = 0;
+  function splash(x, z, s0){
+    const g = rings[ringI++ % rings.length];
+    g.r.position.set(x, WATER_Y + 0.12, z);
+    g.r.visible = true; g.t = 0; g.dur = 1.6 + Math.random() * 0.8; g.s0 = s0;
+  }
+
+  let state = 'dormant', tState = 0, nextBreach = 15 + Math.random() * 30;
+  let cx = 140, cz = 430, orbitR = 60, phase = Math.random() * 6.28;
+  let surfT = 0, midDone = false, prevHead = false;
+  const pathPts = [];                                        /* head history, newest first */
+  const pts = []; for (let i = 0; i < SEGS; i++) pts.push(new THREE.Vector3());
+  const trail = [];
+  function seedPath(){
+    pathPts.length = 0;
+    for (let k = 140; k >= 0; k--){
+      const a = phase - k * 0.05;
+      pathPts.push(new THREE.Vector3(cx + Math.cos(a) * orbitR, -2, cz + Math.sin(a) * orbitR * 0.72));
+    }
+  }
+  seedPath();
+
+  function update(dt){
+    /* splash rings: grow + fade */
+    for (const g of rings){
+      if (!g.r.visible) continue;
+      g.t += dt;
+      const k = g.t / g.dur;
+      if (k >= 1){ g.r.visible = false; continue; }
+      const s = g.s0 * (0.5 + k * 2.2);
+      g.r.scale.set(s, s, 1);
+      g.r.material.opacity = 0.5 * (1 - k);
+    }
+    let c = 0, amp = 0;
+    if (state === 'dormant'){
+      tState += dt;
+      phase += dt * 1.5 / orbitR;
+      if (tState >= nextBreach){
+        if (nightFNow < 0.8){ tState = 0; nextBreach = 8 + Math.random() * 15; }   /* day — keeps drifting, waits for dark */
+        state = 'surface'; surfT = 0; midDone = false;
+        cx = 50 + Math.random() * 240;   /* x 50..290, well out in the sea */
+        cz = 355 + Math.random() * 150;  /* z 355..505, south of the cove mouth */
+        orbitR = 35 + Math.random() * 55;
+        phase = Math.random() * 6.28;
+        seedPath();
+      }
+    } else {
+      surfT += dt / 9;                    /* full breach ≈ 9 s */
+      phase += dt * 4.5 / orbitR;
+      if (surfT >= 1){ state = 'dormant'; tState = 0; nextBreach = 45 + Math.random() * 75; prevHead = false; }
+      else if (surfT < 0.22){ const k = surfT / 0.22; c = 0.06; amp = 6.5 * ss(k); }        /* head + neck rise */
+      else if (surfT < 0.45){ c = 0.16; amp = 6.0; }                                        /* hold, front third up */
+      else if (surfT < 0.72){ const k = (surfT - 0.45) / 0.27; c = 0.16 + k * 0.34; amp = 6.0 * (1 - k * 0.45); }  /* wave runs down the back */
+      else { const k = (surfT - 0.72) / 0.28; c = 0.5; amp = 3.3 * (1 - ss(k)); }           /* plunge */
+    }
+    /* head follows the circle; body is a 2.8 m-spaced rope along its history */
+    pathPts.unshift(new THREE.Vector3(cx + Math.cos(phase) * orbitR, -2, cz + Math.sin(phase) * orbitR * 0.72));
+    if (pathPts.length > 220) pathPts.length = 220;
+    trail.length = 0;
+    let prev = pathPts[0], acc = 0;
+    for (let i = 1; i < pathPts.length && trail.length < SEGS; i++){
+      const p = pathPts[i];
+      let d = prev.distanceTo(p);
+      while (acc + d >= STEP && trail.length < SEGS - 1){
+        const k = (STEP - acc) / d;
+        const q = prev.clone().lerp(p, k);   /* point on segment prev→p */
+        trail.push(q); acc = 0; prev = q;
+        d = prev.distanceTo(p);
+      }
+      acc += d; prev = p;
+    }
+    for (let i = 0; i < SEGS; i++){
+      const t = i / (SEGS - 1);
+      const base = i < trail.length ? trail[i] : pathPts[pathPts.length - 1];
+      pts[i].set(base.x, -2.0 - t * 1.6 + amp * Math.exp(-Math.pow((t - c) / 0.14, 2)), base.z);
+    }
+    for (let i = 0; i < SEGS; i++){
+      segs[i].position.copy(pts[i]);
+      segs[i].lookAt(i < SEGS - 1 ? pts[i + 1] : pts[i - 1]);
+    }
+    headG.position.copy(pts[0]);
+    headG.lookAt(pts[1]);
+    if (!midDone && state === 'surface' && surfT > 0.55){ midDone = true; splash(pts[6].x, pts[6].z, 8); }
+    const headY = pts[0].y;
+    if (headY > WATER_Y && !prevHead){ splash(pts[0].x, pts[0].z, 7); }
+    else if (headY < WATER_Y && prevHead){ splash(pts[0].x, pts[0].z, 11); }
+    prevHead = headY > WATER_Y;
+  }
+  return { update, force(){ state = 'surface'; surfT = 0; midDone = false; cx = 150; cz = 390; orbitR = 55; phase = Math.random() * 6.28; seedPath(); },
+           info(){ return { state, surfT: +surfT.toFixed(2), cx: Math.round(cx), cz: Math.round(cz) }; } };
+})() ;
+window.__RC_SERPENT__ = serpent;   /* debug: force() triggers a breach now */
 
 /* ---------- drifting foam streaks (flow downstream toward the lake, +z) ---------- */
 const foam = [];
@@ -55913,6 +56052,8 @@ function makeBoat(seed, o){
     rocks.push({ x, z, sc: 0.6 + hash(i, 64) * 1.5 });
   }
   for (const r of rocks){
+    const rg = groundH(r.x, r.z);
+    if (rg > 1.4) continue;             /* high bank — rock would float on a cliff; low shoreline only */
     const m = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 1), stones[Math.floor(hash(r.x, r.z) * 3) % 3]);
     m.position.set(r.x, groundH(r.x, r.z) + r.sc * 0.3, r.z);
     m.scale.set(r.sc, r.sc * 0.75, r.sc * (0.7 + hash(r.x, 77) * 0.6));
@@ -59439,6 +59580,7 @@ function animate(){
   lastT = now;
   updateNav(dt);
   stepFrame(dt);
+  serpent.update(dt);
   updateUI(dt);
   controls.update();
   renderer.render(scene, camera);
