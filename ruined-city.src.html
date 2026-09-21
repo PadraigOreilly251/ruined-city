@@ -2042,13 +2042,15 @@ const seaStacks = [];
    [TX - 4.3, TGY + 9.2, TZ + 0.8, 1.0], [TX - 2.7, TGY + 8.8, TZ - 3.9, 0.7],
    [TX + 1.8, TGY + 7.9, TZ + 3.3, 0.8], [TX - 2.5, TGY + 8.0, TZ + 3.1, 0.9]]
   .forEach(([x, y, z, s], i) => tb(x, y, z, s, s * 0.8, s * 0.9, 320 + i, { topBreak: 0.4 }));
-  /* the rubble field, tumbled out over the face and down it to the water */
-  [[-6.5, 5.0, 1.4], [-7.5, -3.0, 1.0], [-9.0, 2.0, 1.2], [-10.5, -1.0, 0.9],
-   [-11.5, 4.5, 1.1], [-12.5, -4.0, 0.8], [-13.5, 1.5, 1.3], [-14.5, -2.5, 0.9],
+  /* the rubble field, tumbled out over the face and down it to the water.
+     Stones sit low on the slope where the rock is visible from the bay —
+     on the dark upper face a stone with no rock behind it reads as floating. */
+  [[-6.5, 5.0, 1.4], [-7.5, -3.0, 1.0], [-9.0, 2.0, 1.2], [-10.0, 6.5, 0.9],
+   [-11.5, 4.5, 1.1], [-11.5, 5.5, 0.8], [-13.5, 1.5, 1.3], [-14.0, 3.0, 0.9],
    [-8.0, 7.5, 0.7], [-5.0, 8.0, 0.8], [-13.0, 6.5, 1.0]]
   .forEach(([dx, dz, s], i) => {
     const x = TX + dx, z = TZ + dz;
-    tb(x, groundH(x, z) + s * 0.3, z, s, s * 0.8, s * 0.9, 340 + i,
+    tb(x, groundH(x, z) + s * 0.42, z, s, s * 0.8, s * 0.9, 340 + i,
       { topBreak: 0.3, rz: (hash(i, 330) - 0.5) * 0.3 });
   });
   /* a fallen length of curtain wall behind it */
@@ -3807,12 +3809,14 @@ function updateSeasons(dt){
     if (inClearZone(x, z)) return;
     tree(x, z, 8 + hash(5100 + i, 600) * 4, 1.7 + hash(5100 + i, 601) * 0.5, 5100 + i * 7, groundH(x, z), true, 5);
   });
-  /* a few on the sea-cliff plateau — the wind keeps them lean */
-  const cliffPines = [[waterCenterX(255) + waterHalfWidth(255) + 34, 255],
-                      [waterCenterX(228) + waterHalfWidth(228) + 48, 228],
-                      [waterCenterX(285) + waterHalfWidth(285) + 26, 285]];
-  cliffPines.forEach(([x, z], i) => {
-    tree(x, z, 5.5 + hash(7300 + i, 600) * 2.5, 1.4 + hash(7300 + i, 601) * 0.4, 7300 + i * 7, groundH(x, z), true, 5);
+  /* a few on the sea-cliff plateau — the wind keeps them lean.
+     The one by the watchtower stays short and set back: a canopy at the
+     keep's crown height reads as floating slabs when orbiting the tower. */
+  const cliffPines = [[waterCenterX(255) + waterHalfWidth(255) + 40, 255, 4.2],
+                      [waterCenterX(228) + waterHalfWidth(228) + 48, 228, 6.0],
+                      [waterCenterX(285) + waterHalfWidth(285) + 26, 285, 5.5]];
+  cliffPines.forEach(([x, z, ph], i) => {
+    tree(x, z, ph + hash(7300 + i, 600) * 1.5, 1.4 + hash(7300 + i, 601) * 0.4, 7300 + i * 7, groundH(x, z), true, 5);
   });
 }
 
@@ -4251,10 +4255,14 @@ function makeCloudSet(n, y0, y1, sMin, sMax, color, opacity){
   scene.add(m);
   return m;
 }
-const cloudsFair = makeCloudSet(16, 46, 62, 6, 12, 0xe8e4d8, 0.5);
-const cloudsStorm = makeCloudSet(22, 48, 62, 8, 13, 0x474c55, 0.0);
+/* clouds sit high — low pale slabs at night read as floating masonry over the ridge */
+const cloudsFair = makeCloudSet(16, 56, 74, 6, 12, 0xe8e4d8, 0.5);
+const cloudsStorm = makeCloudSet(22, 58, 76, 8, 13, 0x474c55, 0.0);
+const cloudDayCol = new THREE.Color(0xe8e4d8), cloudNightCol = new THREE.Color(0x59637a);
 function updateClouds(dt){
-  cloudsFair.material.opacity = 0.45 * clamp01(1 - wx.rain * 1.5);
+  /* moonlit clouds go dark and quiet — a pale slab in a dark sky looks like a floating chunk of the fortress */
+  cloudsFair.material.opacity = 0.45 * clamp01(1 - wx.rain * 1.5) * (1 - nightFNow * 0.62);
+  cloudsFair.material.color.copy(cloudDayCol).lerp(cloudNightCol, nightFNow);
   cloudsStorm.material.opacity = 0.75 * clamp01((wx.clouds - 0.5) * 2.2);
   const m4 = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Quaternion();
   for(const [mesh, vis] of [[cloudsFair, clamp01(wx.clouds * 1.4)], [cloudsStorm, clamp01((wx.clouds - 0.45) * 2)]] ){
