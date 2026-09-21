@@ -730,7 +730,9 @@ const foam = [];
 const glints = [];
 const cGlintNight = new THREE.Color(0xaac4e8);
 {
-  const spots = [ [waterCenterX(90), 90, 7], [LAKE_CX, LAKE_CZ, 12], [waterCenterX(-70), -70, 5.5] ];
+  /* the old lake-center disc (a 12 m fixed shimmer) reads as a pale UFO on the
+     wide open cove — dropped; the two small river glints still read fine */
+  const spots = [ [waterCenterX(90), 90, 7], [waterCenterX(-70), -70, 5.5] ];
   for (const [gx, gz, gs] of spots){
     const g = new THREE.Mesh(new THREE.CircleGeometry(gs * 0.5, 20),
       new THREE.MeshBasicMaterial({ color: 0xfff0c8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
