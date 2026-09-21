@@ -45,7 +45,7 @@
   fields, foxes hunt after dark, crows wheel over broken towers, and the weather keeps its own
   council &mdash; sun, fog, rain, and night, all day. West of town the cathedral stands
   alone in the west meadow, its broken flagging overgrown, one spire still reaching, its nave slowly giving way. A river winds
-  through the eastern hills and opens into a lake at the map's edge, where old boats still lie
+  through the eastern hills and opens into a sea cove at the map's edge, where old boats still lie
   wrecked. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
 </div>
@@ -54631,14 +54631,18 @@ function columns(cells, material, noShadow){
                      denser toward the centre; scattered rubble.
    River ........... meanders through the east meadow, centreline
                      x = riverX(z) (band ≈ x 104–132), flows south (+z)
-                     the full map length and opens into the LAKE.
-   Lake ............ ellipse centred (114,245), radii 50(x)/78(z):
-                     shoreline z≈167–323, right at the map's south edge.
+                     the full map length and opens into the SEA COVE.
+   Sea cove ......... widens from the river mouth into an open bay that
+                     reaches the map's south edge and runs out to the open
+                     sea beyond (no shore to the south — it just goes on).
                      Water surface at WATER_Y (−0.55); sunken boat at
-                     (≈118,252), beached wrecks + ruined jetty on shore.
+                     (≈118,252), beached wrecks + ruined jetty on the shore.
    Bridge .......... the z=0 avenue crosses the river at x = BRIDGE_X
                      (≈117); middle span collapsed into the water.
    Water tower ..... (88,−62), tilted.
+   Lighthouse ....... (72, 195) banded cream tower on the cove's west shore,
+                     gallery + lantern, rotating night beam. Reads too clean —
+                     needs weathering to look abandoned (tracked in README).
    West meadow ..... x −96…−150: rolling grass, hero trees, wildflowers,
                      deer herd, rabbits, squirrels.
    Hill forest ..... beyond r≈120 wherever terrain ≥ 2.5m (instanced pines).
@@ -54655,6 +54659,8 @@ function columns(cells, material, noShadow){
 const RIVER_HW = 4.5;                       /* river half-width (m) */
 const WATER_Y  = -0.55;                     /* water surface height */
 const LAKE_CX = 114, LAKE_CZ = 245, LAKE_RX = 50, LAKE_RZ = 78;
+const SEA_EDGE = 330;                      /* map south edge — the cove opens to the sea here */
+const SEA_W = 90;                          /* half-width of the cove mouth at the sea */
 const lerpN = (a, b, t) => a + (b - a) * t;
 function riverX(z){
   /* gentle S-curves; keeps the whole channel east of the city (x > 99) */
@@ -54669,8 +54675,9 @@ function waterCenterX(z){
 function waterHalfWidth(z){
   if (z < 150) return RIVER_HW;
   if (z < 175) return lerpN(RIVER_HW, 24, Math.pow(clamp01((z - 150) / 25), 2));
-  const d = (z - LAKE_CZ) / LAKE_RZ;
-  return Math.abs(d) >= 1 ? 0 : LAKE_RX * Math.sqrt(1 - d*d);
+  /* cove: widen steadily from the river mouth into an open bay that meets the sea */
+  const t = clamp01((z - 175) / (SEA_EDGE - 175));
+  return 24 + (SEA_W - 24) * Math.pow(t, 0.9);
 }
 
 /* ---------- terrain heights ---------- */
@@ -54684,15 +54691,19 @@ function groundH(x, z){
   /* gentle terraced undulation in the meadows (outside the flat city) */
   if (d > 94) h += Math.floor(((fbm(x*0.05 + 31, z*0.05 + 17) - 0.5) * 1.5) / 0.35) * 0.35;
   h = Math.max(0, h - 2.2);
-  /* lake shore shelf: terrace the surrounding hills down to a low plain,
-     so the lake reads as a natural basin instead of a deep pit */
-  {
-    const ex = (x - LAKE_CX) / (LAKE_RX * 2.0), ez = (z - LAKE_CZ) / (LAKE_RZ * 2.0);
-    const e = ex*ex + ez*ez;
-    if (e < 1){
-      const shelfY = 1.4 + 1.0 * fbm(x * 0.03 + 9.1, z * 0.03 + 5.3);
-      const t = Math.sqrt(clamp01(1 - e));
-      if (h > shelfY) h = lerpN(h, shelfY, t);
+  /* cove shore shelf: terrace the surrounding hills down to a low plain so the
+     bay reads as a natural basin instead of a deep pit, and the sea takes over
+     past the map's south edge */
+  if (z > 148){
+    const ww = waterHalfWidth(z);
+    if (ww > 0.4){
+      const rd = Math.abs(x - waterCenterX(z));
+      const basin = ww * 1.55 + 8;
+      if (rd < basin){
+        const shelfY = 1.4 + 1.0 * fbm(x * 0.03 + 9.1, z * 0.03 + 5.3);
+        const t = Math.sqrt(clamp01(1 - rd / basin));
+        if (h > shelfY) h = lerpN(h, shelfY, t);
+      }
     }
   }
   /* river + lake: carve the bed, slope the banks down to the waterline */
@@ -54870,23 +54881,48 @@ for (let z = -334; z <= 330; z += 3){
   if (ww < 0.4) continue;
   waterRows.push({ z, cx: waterCenterX(z), ww });
 }
-const waterGeo = new THREE.BufferGeometry();
-{
-  const n = waterRows.length, pos = new Float32Array(n * 6), idx = [];
-  waterRows.forEach((r, i) => {
+function buildWaterMesh(rows){
+  const n = rows.length;
+  if (n < 2) return null;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(n * 6), idx = [];
+  rows.forEach((r, i) => {
     pos[i*6+0] = r.cx - r.ww; pos[i*6+1] = WATER_Y; pos[i*6+2] = r.z;
     pos[i*6+3] = r.cx + r.ww; pos[i*6+4] = WATER_Y; pos[i*6+5] = r.z;
     if (i < n - 1) idx.push(i*2, i*2+2, i*2+1,  i*2+1, i*2+2, i*2+3);
   });
-  waterGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  waterGeo.setIndex(idx);
-  waterGeo.computeVertexNormals();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
 }
 const waterMat = new THREE.MeshLambertMaterial({
   color: 0x4d707c, transparent: true, opacity: 0.72, side: THREE.DoubleSide });
-const water = new THREE.Mesh(waterGeo, waterMat);
-water.receiveShadow = true;
-scene.add(water);
+const seaMat = new THREE.MeshLambertMaterial({
+  color: 0x3a6a8c, transparent: true, opacity: 0.8, side: THREE.DoubleSide, fog: false });
+const waterMeshes = [];
+/* river: freshwater, fogged */
+{
+  const rows = waterRows.filter(r => r.z < 150);
+  const g = buildWaterMesh(rows);
+  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
+}
+/* cove + open sea: seawater, no fog so the horizon stays a clean line */
+{
+  const rows = waterRows.filter(r => r.z >= 150);
+  const g = buildWaterMesh(rows);
+  if (g){ const m = new THREE.Mesh(g, seaMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
+}
+
+/* ---------- open sea beyond the cove mouth ---------- */
+{
+  const seaGeo = new THREE.PlaneGeometry(1700, 1000, 1, 1);
+  const sea = new THREE.Mesh(seaGeo, seaMat);
+  sea.rotation.x = -Math.PI/2;
+  sea.position.set(60, WATER_Y - 0.02, 330 + 499);   /* z 330..1330, x -790..910 */
+  sea.receiveShadow = true;
+  scene.add(sea);
+}
 
 /* ---------- drifting foam streaks (flow downstream toward the lake, +z) ---------- */
 const foam = [];
@@ -57219,6 +57255,11 @@ function treeRoof(x, z, baseY, h, seed){
     const a = (i / 28) * Math.PI * 2 + (hash(i, 51) - 0.5) * 0.3;
     const r = 330 + hash(i, 52) * 110;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    /* drop any far-hill cell that now sits in the sea or inside the cove —
+       it would read as a floating slab in the water */
+    const ww = waterHalfWidth(z);
+    const rd = ww > 0.4 ? Math.abs(x - waterCenterX(z)) : 1e9;
+    if (z > 330 || (ww > 0.4 && rd < ww + 40)) continue;
     const w = 55 + hash(i, 53) * 60, d = 45 + hash(i, 54) * 45, hgt = 16 + hash(i, 55) * 28;
     cells.push({ x, z, y: -14, sy: hgt, sx: w, sz: d, ry: hash(i, 57) * 3,
       color: HILL_COLS[Math.floor(hash(i, 56) * HILL_COLS.length)] });
@@ -59279,15 +59320,17 @@ function stepFrame(dt){
   }
   /* water: ripples + drifting foam */
   {
-    const pos = waterGeo.attributes.position;
-    for(let i = 0; i < waterRows.length; i++){
-      const r = waterRows[i];
-      pos.setY(i*6+1, WATER_Y + 0.06*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + tSim*0.45));
-      pos.setY(i*6+4, WATER_Y + 0.06*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + 0.8 + tSim*0.45));
+    for (const wm of waterMeshes){
+      const pos = wm.geo.attributes.position;
+      for(let i = 0; i < wm.rows.length; i++){
+        const r = wm.rows[i];
+        pos.setY(i*6+1, WATER_Y + 0.06*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + tSim*0.45));
+        pos.setY(i*6+4, WATER_Y + 0.06*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + 0.8 + tSim*0.45));
+      }
+      pos.needsUpdate = true;
+      /* normals change slowly on a near-flat ribbon — recompute on a slow cadence, not every frame */
+      if ((frameCount++ & 3) === 0) wm.geo.computeVertexNormals();
     }
-    pos.needsUpdate = true;
-    /* normals change slowly on a near-flat ribbon — recompute on a slow cadence, not every frame */
-    if ((frameCount++ & 3) === 0) waterGeo.computeVertexNormals();
     for(const f of foam){
       const lake = f.z > 160;
       f.z += f.sp * dt * (lake ? 0.5 : 2.4);

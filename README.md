@@ -4,7 +4,7 @@ A single-file, fully procedural voxel city that time and nature have reclaimed.
 Decades after the last bus left, deer graze the old fields, foxes hunt after
 dark, crows wheel over broken towers, and the weather keeps its own council —
 sun, fog, rain, snow, storm and night, all day. A river winds through the
-eastern hills and opens into a lake at the map's edge, where old boats still
+eastern hills and opens into a sea cove at the map's edge, where old boats still
 lie wrecked. Everything you see is real and walkable: there is no backdrop
 wall, only a city lost in the hills.
 
@@ -55,9 +55,24 @@ Example: `ruined-city.html#time=13&day=3&wx=snow` — a winter afternoon in the 
   footprints, broken rooflines, rubble, overgrown roofs, street-level doors,
   lintels and faded signs. Landmarks: clock tower, town hall, school, gas
   station, water tower, radio mast, lighthouse with a rotating night beam.
+
+### Landmark tracker
+
+Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
+
+| Landmark | Position | Status / notes |
+|---|---|---|
+| Clock tower | (24, −24) | Broken clock, tree on top. Reserved lot. |
+| Cathedral | (−120, 80) | Ruined gothic, west meadow. Reserved lot. |
+| Water tower | (88, −62) | Tilted, on its last legs (city). |
+| Water tower 2 | (−6, 132) | Lone rusted tank, south meadow (deliberately isolated). |
+| **Lighthouse** | (72, 195) | Banded rust rings, gallery, dome — **reads too clean for an abandoned world**: needs weathering (rust streaks, broken gallery rail, dead/dark lamp, overgrown base). Currently on the cove's west shore. |
+| Radio mast | — | Thin mast on the skyline. |
+| Ferris wheel | — | Rust-red, east of town. |
+| Boat graveyard | cove shore | Beached wrecks + sunken hull + ruined jetty. |
 - **Living landscape** — hero trees that sway, grass tufts that bend, a
-  meandering river, lake with lily pads and wrecked boats, reeds, wildflowers,
-  mushrooms, fallen logs.
+  meandering river, a sea cove with lily pads and wrecked boats, reeds,
+  wildflowers, mushrooms, fallen logs.
 - **Day/night** — 24 h cycle in 4 real minutes: sunrise, dusk, moonlit night,
   lit windows, streetlamps that flicker at dusk, a few that sputter back to
   life, lighthouse beam, stars and shooting stars on clear nights.
@@ -71,7 +86,7 @@ Example: `ruined-city.html#time=13&day=3&wx=snow` — a winter afternoon in the 
   the meadow into town and a fox trail along the avenue.
 - **Procedural ambient audio** — WebAudio wind, rain, water, thunder,
   daytime birds, night crickets; the water channel fades with your distance
-  to the river/lake. Mute with the toggle in the top-right. (Audio starts on
+  to the river/cove. Mute with the toggle in the top-right. (Audio starts on
   your first click, per browser autoplay rules.)
 
 ## Development
