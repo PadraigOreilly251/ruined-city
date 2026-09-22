@@ -92,8 +92,19 @@ Tracked so decay work doesn't drift. Positions are world (x, z) in metres.
   heavier rain, lightning flashes), blizzard (winter whiteout: dense fog to
   ~120 m, driving snow that falls and blows harder, near-gale wind).
 - **Wildlife** — deer, rabbits, foxes and crows roam; gulls wheel the cove by
-  day (lazy glides, stoops to the water, a few roosting on the sea stacks —
-  gone by dusk and in blizzards); fireflies on clear
+  day (lazy glides with a held-wing V, power-flap bursts, stoops to the water,
+  a few roosting on the sea stacks with a head-turn survey — gone by dusk and in
+  blizzards); all flight now animates properly: wings flap on the lift axis with
+  root-to-tip taper (no more stick-insect slabs), bodies pitch into the glide and
+  bank into every turn, per-bird flap/glide duty cycles so no two birds stroke in
+  sync; crows burst-flap between short glides, starlings flutter constantly,
+  the hawk soars on long glides, stoops at the water, and scatters the smaller
+  birds that come near its circle; bats never glide — a continuous quick beat.
+  Deer walk a diagonal gait at speed-matched cadence with a body bob and stay
+  grounded on the terrain; rabbits hop as a unit — stretched flat at the ground,
+  arched at the apex, hind legs driving, a loose zigzag — and their ears twitch
+  at rest and lay flat when you're close; fox trot pace varies per animal.
+  Fireflies on clear
   summer nights; autumn leaves drift down; snow footprints: a deer trail from
   the meadow into town and a fox trail along the avenue.
 - **Procedural ambient audio** — WebAudio wind, rain, water, thunder,

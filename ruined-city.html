@@ -59072,7 +59072,7 @@ function makeDeer(x, z, scale, seed, graze){
   tail.position.set(0, 0.78*scale, -0.46*scale); g.add(tail);
   g.position.set(x, groundH(x, z), z);
   scene.add(g);
-  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 0, target: null, eyeM };
+  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, legPh: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 0, target: null, eyeM };
   a.target = a;   /* herd: fawn follows first deer */
   deerList.push(a);
   DAY_ANIMALS.push(a);
@@ -59132,9 +59132,11 @@ function updateDeer(dt, dayF){
       }
       a.g.position.x += Math.sin(a.dir) * 4.5 * dt;
       a.g.position.z += Math.cos(a.dir) * 4.5 * dt;
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.06;
       a.g.rotation.y = a.dir;
-      const swing = Math.sin(tSim * 14 + a.phase) * 0.5;
-      a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+      a.legPh += dt * 15;
+      const swing = Math.sin(a.legPh) * 0.55;
+      a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });   /* diagonal gait */
       if (a.t <= 0 || pd > 25 || a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 3 + Math.random() * 3; }
     }
     if (a.t <= 0 && (a.state === 'graze' || a.state === 'stand')){
@@ -59168,9 +59170,11 @@ function updateDeer(dt, dayF){
       }
       a.g.position.x += Math.sin(a.dir) * a.speed * dt;
       a.g.position.z += Math.cos(a.dir) * a.speed * dt;
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.04;   /* body bob */
       a.g.rotation.y = a.dir;
-      const swing = Math.sin(tSim * 7 + a.phase) * 0.4;
-      a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
+      a.legPh += dt * (1.5 + a.speed * 5.5);
+      const swing = Math.sin(a.legPh) * 0.4;
+      a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });   /* diagonal gait */
       /* keep in the meadow */
       if (a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 2; }
     } else if (a.state !== 'flee') a.legs.forEach(l => { l.rotation.x *= 0.9; });
@@ -59213,7 +59217,7 @@ function makeFox(seed){
   const tip = new THREE.Mesh(B(0.11, 0.11, 0.16), CREAM); tip.position.set(0, 0.58, -0.82); g.add(tip);
   g.position.set(0, 0, -70);
   scene.add(g);
-  const a = { g, head, tail, legs, eyeM, phase: Math.random() * 6.28, state: 'den', t: 2 + Math.random() * 4, dir: 0, speed: 3.4,
+  const a = { g, head, tail, legs, eyeM, phase: Math.random() * 6.28, stepPh: Math.random() * 6.28, state: 'den', t: 2 + Math.random() * 4, dir: 0, speed: 3.4,
     waypoints: [[0, -70], [12, -40], [12, -12], [-20, -12], [-20, 30], [14, 30], [14, 60], [40, 60], [40, 20], [-52, 44], [-30, -66], [0, -70]] };
   a.wi = 0;
   a.j = null;   /* T2: per-outing jittered waypoints */
@@ -59306,7 +59310,8 @@ function updateFox(dt, dayF){
         if ((r.thumpT || 0) <= 0){ rabbitThump(clamp01(1 - dd / 40) * 0.4); r.thumpT = 2.5; }
       }
       const sp = 5.2;   /* faster than a trot */
-      const step = tSim * 11;
+      a.stepPh += dt * 17;
+      const step = a.stepPh;
       const hop = Math.abs(Math.sin(step));
       a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.1;
       a.g.position.x += Math.sin(a.dir) * sp * dt;
@@ -59326,7 +59331,8 @@ function updateFox(dt, dayF){
       if (pd < 10) a.wi = (a.wi + 1) % a.waypoints.length;             /* T1: don't loop back through the player */
     } else {
       a.dir = Math.atan2(dx, dz);
-      const step = tSim * 9;
+      a.stepPh += dt * a.speed * 3.4;   /* hop rate tracks the fox's own pace */
+      const step = a.stepPh;
       /* bounding gait: two-footed hop */
       const hop = Math.abs(Math.sin(step));
       a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.09;
@@ -59441,7 +59447,7 @@ function makeRabbit(x, z, seed){
   DAY_ANIMALS.push(a);
   return a;
 }
-const rabbits = [ makeRabbit(-100, 40, 501), makeRabbit(-114, 2, 502) ];
+const rabbits = [ makeRabbit(-100, 40, 501), makeRabbit(-114, 2, 502), makeRabbit(-95, 16, 503), makeRabbit(-110, 48, 504) ];
 function updateRabbits(dt, dayF){
   for(let ri = 0; ri < rabbits.length; ri++){
   const a = rabbits[ri];
@@ -59463,21 +59469,28 @@ function updateRabbits(dt, dayF){
   }
   if (a.state === 'hop' || a.state === 'bolt'){
     const sp = a.state === 'bolt' ? 5.8 : 3.2;
-    const hop = Math.abs(Math.sin(tSim * (a.state === 'bolt' ? 14 : 12) + a.phase));
+    const hopPh = tSim * (a.state === 'bolt' ? 14 : 12) + a.phase;
+    const hop = Math.abs(Math.sin(hopPh));
     a.g.position.y = groundH(a.g.position.x, a.g.position.z) + hop * 0.22;
     a.g.position.x += Math.sin(a.dir) * sp * dt;
     a.g.position.z += Math.cos(a.dir) * sp * dt;
     a.g.rotation.y = a.dir;
-    a.legs.forEach((l, k) => { l.rotation.x = Math.sin(tSim * 12) * 0.6 * (k % 2 ? 1 : -1); });
+    a.g.rotation.x = 0.2 - 0.32 * hop;   /* stretched low on the ground, arched at the apex */
+    if (a.state === 'hop') a.dir += Math.sin(tSim * 0.6 + a.phase) * 0.3 * dt;   /* loose zigzag, not a straight line */
+    a.legs.forEach((l, k) => { l.rotation.x = Math.sin(hopPh + (k < 2 ? 0.6 : 0)) * (k < 2 ? 0.4 : 0.7) * (k % 2 ? 1 : -1); });   /* hind legs lead */
     if (a.state === 'bolt' && (a.t <= 0 || pd > 14)){ a.state = 'freeze'; a.t = 3; a.x0 = a.g.position.x; a.z0 = a.g.position.z; }   /* T1: moved house */
     else if (Math.hypot(a.g.position.x - a.x0, a.g.position.z - a.z0) > 12) a.state = 'freeze', a.t = 3;
   } else {
     const spooked = pd < 10 ? 1 : 0;   /* T1: ears lay back while the wanderer is close */
+    if (a.earTw > 0) a.earTw -= dt;
+    else if (Math.random() < dt * 0.3) a.earTw = 0.3;   /* occasional ear twitch */
     a.ears.forEach((e, k) => {
-      e.rotation.z = 0.05 + Math.sin(tSim * 5 + a.phase + k) * 0.06 * (1 - spooked);
+      e.rotation.z = 0.05 + Math.sin(tSim * 5 + a.phase + k) * 0.06 * (1 - spooked)
+                   + (a.earTw > 0 ? Math.sin(tSim * 45) * 0.35 : 0);
       e.rotation.x = -0.5 * spooked;
     });
     a.head.rotation.y = Math.sin(tSim * 0.5 + a.phase) * 0.3 * (1 - spooked);
+    a.g.rotation.x *= Math.exp(-dt * 6);
   }
   /* T6: eye-shine in the dim */
   a.eyeM.emissiveIntensity = Math.max(0, 0.65 - dayF) * 1.6 * Math.max(0, 1 - pd / 12);
@@ -59636,6 +59649,48 @@ function updateCat(dt, dayF){
   } else a.head.rotation.y = Math.sin(tSim * 0.7 + a.phase) * 0.3;
 }
 
+/* ---------- shared flight pose ----------
+   Wings flap up-down (rotation.z; the old rotation.y sweep made birds look
+   like helicopter/stick-insects), sweep back along the body via rotation.y.
+   Body attitude comes from the ACTUAL motion (finite difference of
+   position): correct heading on elliptical circuits (rotation.y = -ph only
+   holds for circles), banked turns, nose-down on dives, nose-up on climbs. */
+function orientBird(b, dt, maxBank, maxPitch){
+  if (dt <= 0.0001) dt = 0.0001;
+  const x = b.g.position.x, y = b.g.position.y, z = b.g.position.z;
+  if (b.px === undefined){ b.px = x; b.py = y; b.pz = z; b.yaw = b.g.rotation.y; b.bank = 0; b.pitch = 0; b.bankT = 0; b.pitchT = 0; }
+  const dx = x - b.px, dy = y - b.py, dz = z - b.pz;
+  const dh = Math.hypot(dx, dz);
+  if (dh > 0.02){
+    const yaw = Math.atan2(dx, dz);                     /* body faces +z */
+    let dyaw = yaw - b.yaw; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw));
+    b.yaw += dyaw * (1 - Math.exp(-dt * 7));
+    b.bankT = clampN(-(dyaw / dt) * 0.13, -maxBank, maxBank);   /* into the turn */
+    b.pitchT = clampN(Math.atan2(dy, dh) * 0.5, -maxPitch, maxPitch);   /* + = climbing */
+  } else { b.bankT = 0; b.pitchT = 0; }
+  if (dh > 25){ b.px = x; b.py = y; b.pz = z; b.bankT = 0; b.pitchT = 0; }   /* teleport/respawn: no spike */
+  else { b.px = x; b.py = y; b.pz = z; }
+  b.bank += (b.bankT - b.bank) * (1 - Math.exp(-dt * 3));
+  b.pitch += (b.pitchT - b.pitch) * (1 - Math.exp(-dt * 3));
+  b.g.rotation.y = b.yaw;
+  b.g.rotation.z = b.bank;
+  b.g.rotation.x = -b.pitch;
+}
+/* asymmetric flap stroke: fast deep downstroke, slow shallow upstroke.
+   Returns f in ~[-0.35, 1]: positive = wingtips down. */
+function flapWave(t, rate, ph){
+  const u = ((t * rate + ph) % 1 + 1) % 1;
+  if (u < 0.45) return Math.sin(u / 0.45 * Math.PI);          /* downstroke */
+  return -0.32 * Math.sin((u - 0.45) / 0.55 * Math.PI);       /* upstroke */
+}
+/* set wing pose from a flap value f (+ = tips down) and a sweep value s
+   (+ = swept back). Left wing sits at -x, right at +x. */
+function wingPose(wl, wr, f, s, tipL, tipR){
+  wl.rotation.z = -f; wl.rotation.y = s;
+  wr.rotation.z = f;  wr.rotation.y = -s;
+  if (tipL){ tipL.rotation.z = -f * 0.25; tipR.rotation.z = f * 0.25; }   /* wingtip flex lag */
+}
+
 /* ---------- birds: crows (loop + perch), hawk, starlings ---------- */
 const birdMat = lamber(0x33383e);
 const birds = [];
@@ -59705,16 +59760,14 @@ function updateBirds(dt, dayF){
           perch.from.y + (perch.pos.y - perch.from.y) * e,
           perch.from.z + (perch.pos.z - perch.from.z) * e
         );
-        b.g.rotation.y = Math.atan2(perch.pos.x - perch.from.x, perch.pos.z - perch.from.z);
-        const flap = Math.sin(tSim * 10 + b.flapPh) * (1 - perch.transit);
-        b.wl.rotation.y = flap * 0.75; b.wr.rotation.y = -flap * 0.75;
-        b.g.rotation.z = 0;
+        orientBird(b, dt, 0.4, 0.6);
+        const f = flapWave(tSim, 4, b.flapPh) * (1 - perch.transit * 0.7);
+        wingPose(b.wl, b.wr, f, 0.15 * (1 - perch.transit) + 0.35 * perch.transit);
       } else {
         b.g.position.set(perch.pos.x, perch.pos.y + Math.sin(tSim * 1.2 + b.flapPh) * 0.05, perch.pos.z);
-        b.g.rotation.y = 2.6;
-        b.wl.rotation.y = 0.12; b.wr.rotation.y = -0.12;
+        b.g.rotation.set(0, 2.6, 0);
+        wingPose(b.wl, b.wr, 0.15, 0.5);   /* folded, swept back */
         b.head.rotation.y = Math.sin(tSim * 0.5 + b.flapPh) * 1.2;   /* turning its head, surveying the ruin */
-        b.g.rotation.z = 0;
       }
       continue;
     }
@@ -59739,43 +59792,68 @@ function updateBirds(dt, dayF){
           hawk.stoopFrom.x + (hawk.stoopTo.x - hawk.stoopFrom.x) * e,
           hawk.stoopFrom.y + (hawk.stoopTo.y - hawk.stoopFrom.y) * e,
           hawk.stoopFrom.z + (hawk.stoopTo.z - hawk.stoopFrom.z) * e);
-        hawk.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-        const flap = Math.sin(tSim * b.flapRate + b.flapPh);
-        hawk.wl.rotation.y = flap * 0.9; hawk.wr.rotation.y = -flap * 0.9;
-        hawk.g.rotation.z = Math.sin(tSim * 2) * 0.15;
+        orientBird(hawk, dt, 0.35, 1.25);
+        wingPose(hawk.wl, hawk.wr, 0.35, 1.0);   /* swept back, tips tucked down */
         if (hawk.stoop >= 1){ hawk.stoop = -0.0001; hawk.stoopFrom = { x: hawk.g.position.x, y: hawk.g.position.y, z: hawk.g.position.z }; }
         continue;
       }
       if (hawk.stoop < 0){
         hawk.stoop -= dt / 1.6;
-        const e = hawk.stoop <= -1 ? 1 : hawk.stoop * hawk.stoop * (3 - 2 * hawk.stoop);
-        /* climb back to the circle centre height */
+        const p = clamp01(-hawk.stoop);
+        const e = p * p * (3 - 2 * p);
+        /* climb back to the circle centre height — a few power flaps, then the glide */
         const cx2 = hawk.cx + Math.cos(hawk.ph) * hawk.rx * (1 + 0.15 * Math.sin(tSim * hawk.driftSp + hawk.driftPh));
         const cz2 = hawk.cz + Math.sin(hawk.ph) * hawk.rz * (1 + 0.15 * Math.sin(tSim * hawk.driftSp + hawk.driftPh));
         hawk.g.position.set(
           hawk.stoopFrom.x + (cx2 - hawk.stoopFrom.x) * e,
           hawk.stoopFrom.y + (hawk.h - hawk.stoopFrom.y) * e,
           hawk.stoopFrom.z + (cz2 - hawk.stoopFrom.z) * e);
-        hawk.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-        const flap = Math.sin(tSim * b.flapRate + b.flapPh);
-        hawk.wl.rotation.y = flap * 0.8; hawk.wr.rotation.y = -flap * 0.8;
+        orientBird(hawk, dt, 0.35, 0.8);
+        if (p < 0.5){
+          const f = flapWave(tSim, 2.4, hawk.flapPh) * 0.9;
+          wingPose(hawk.wl, hawk.wr, f, 0.1);
+        } else {
+          wingPose(hawk.wl, hawk.wr, -0.3 + Math.sin(tSim * 0.8 + hawk.flapPh) * 0.06, 0.08 * Math.sin(tSim * 0.5 + hawk.flapPh));
+        }
         if (hawk.stoop <= -1){ hawk.stoop = 0; hawk.stoopT = 20 + Math.random() * 14; }
         continue;
       }
     }
     /* T2: slow per-bird drift — never the same circle twice */
+    if (b.flapT === undefined){ b.flapT = 0; b.glideT = 2 + Math.random() * 5; }
     const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
     const x = b.cx + Math.cos(b.ph) * b.rx * dm;
     const z = b.cz + Math.sin(b.ph) * b.rz * dm;
-    const y = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh)) + Math.sin(b.ph * 2.3 + b.flapPh) * (isHawk ? 4 : 1.4);
-    b.g.position.set(x, y, z);
-    b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-    const flap = Math.sin(tSim * b.flapRate + b.flapPh);
-    b.wl.rotation.y = flap * 0.75;
-    b.wr.rotation.y = -flap * 0.75;
-    b.g.rotation.z = isHawk ? Math.sin(b.ph) * 0.12 : 0;
+    const yT = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh)) + Math.sin(b.ph * 2.3 + b.flapPh) * (isHawk ? 4 : 1.4);
+    b.g.position.set(x, yT - (isStarling ? 0 : 0.7), z);
+    /* flight style: starlings flap constantly; crows alternate power bursts
+       with short glides; the hawk rides the air in a held-wing V and only
+       flaps to keep its height. */
+    let f, sweep;
+    if (isStarling){
+      f = flapWave(tSim, 8, b.flapPh) * 0.7;
+      sweep = 0.1;
+    } else {
+      if (b.flapT > 0) b.flapT -= dt;
+      else {
+        b.glideT -= dt;
+        if (b.glideT <= 0 || yT - b.g.position.y < 1.6){
+          b.flapT = isHawk ? 1.6 + Math.random() * 1.2 : 0.7 + Math.random() * 0.8;
+          b.glideT = isHawk ? 5 + Math.random() * 7 : 2 + Math.random() * 3;
+        }
+      }
+      if (b.flapT > 0){
+        f = flapWave(tSim, isHawk ? 2.2 : 3.2, b.flapPh) * (isHawk ? 0.85 : 0.8);
+        sweep = 0.12;
+      } else {
+        f = (isHawk ? -0.3 : -0.22) + Math.sin(tSim * 0.8 + b.flapPh) * 0.05;
+        sweep = 0.1 * Math.sin(tSim * 0.55 + b.flapPh);
+      }
+    }
+    if (isStarling) b.g.position.y += f * 0.04;   /* body bob with the stroke */
     /* T2b: hawk-scatter — when the hawk circles within ~12u of a smaller
        bird, the bird dives away from the hawk's line, then drifts back. */
+    let scareTilt = 0;
     if (!isHawk && hawkUp){
       const hd = Math.hypot(b.g.position.x - hpx, b.g.position.z - hpz);
       if (hd < 14) b.scare = Math.min(1, b.scare + dt * 3.2);
@@ -59787,11 +59865,13 @@ function updateBirds(dt, dayF){
         b.g.position.x += (ax / al) * b.scare * 6 * dt * 6;
         b.g.position.z += (az / al) * b.scare * 6 * dt * 6;
         b.g.position.y -= b.scare * 2.5 * dt * 4;
-        b.g.rotation.z = b.scare * 0.5 * Math.sin(tSim * 9 + b.flapPh);   /* panicked tilt */
-        b.wl.rotation.y = flap * (0.75 + b.scare * 0.5);
-        b.wr.rotation.y = -flap * (0.75 + b.scare * 0.5);
+        scareTilt = b.scare * 0.45 * Math.sin(tSim * 9 + b.flapPh);   /* panicked tilt */
+        f *= (1 + b.scare * 0.6);   /* panicked flapping */
       }
     } else if (!isHawk) b.scare = Math.max(0, b.scare - dt * 0.8);
+    orientBird(b, dt, 0.5, 0.5);
+    b.g.rotation.z = b.bank + scareTilt;
+    wingPose(b.wl, b.wr, f, sweep);
   }
 }
 
@@ -59806,12 +59886,25 @@ function makeGull(cx, cz, rx, rz, h, speed, ph, s, perchAt){
         tipC = lamber(0x3c4046), beakC = lamber(0xd99a3e),
         legC = lamber(0xcf8f3c), tailC = lamber(0xd8d4ca);
   const body = new THREE.Mesh(B(0.3 * s, 0.11 * s, 0.5 * s), white); body.castShadow = true; g.add(body);
-  const wGeoL = new THREE.BoxGeometry(0.58 * s, 0.016, 0.26 * s); wGeoL.translate(-0.29 * s, 0, 0);
-  const wGeoR = new THREE.BoxGeometry(0.58 * s, 0.016, 0.26 * s); wGeoR.translate(0.29 * s, 0, 0);
-  const wl = new THREE.Mesh(wGeoL, wingC); wl.castShadow = true; g.add(wl);
-  const wr = new THREE.Mesh(wGeoR, wingC); wr.castShadow = true; g.add(wr);
-  const tipL = new THREE.Mesh(B(0.17 * s, 0.013, 0.19 * s), tipC); tipL.position.set(-0.46 * s, 0, 0); wl.add(tipL);   /* black wingtips */
-  const tipR = new THREE.Mesh(B(0.17 * s, 0.013, 0.19 * s), tipC); tipR.position.set(0.46 * s, 0, 0); wr.add(tipR);
+  /* tapered wings: full chord at the root, narrowing toward the tip, slightly
+     thicker near the body — an untapered slab reads as a stick when seen edge-on */
+  const mkWing = (side) => {
+    const geo = new THREE.BoxGeometry(0.58 * s, 0.02 * s, 0.3 * s);
+    geo.translate(side * 0.29 * s, 0, -0.02 * s);
+    const pa = geo.attributes.position;
+    for (let v = 0; v < pa.count; v++){
+      const t = Math.abs(pa.getX(v)) / (0.58 * s);           /* 0 root → 1 tip */
+      const f = 1 - 0.52 * t;                              /* tip chord ~48% of root */
+      pa.setZ(v, (pa.getZ(v) + 0.02 * s) * f - 0.02 * s);
+      pa.setY(v, pa.getY(v) * (1 - 0.35 * t));              /* thinner toward the tip */
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const wl = new THREE.Mesh(mkWing(-1), wingC); wl.castShadow = true; g.add(wl);
+  const wr = new THREE.Mesh(mkWing(1), wingC); wr.castShadow = true; g.add(wr);
+  const tipL = new THREE.Mesh(B(0.16 * s, 0.014, 0.15 * s), tipC); tipL.position.set(-0.5 * s, 0, 0); wl.add(tipL);   /* black wingtips */
+  const tipR = new THREE.Mesh(B(0.16 * s, 0.014, 0.15 * s), tipC); tipR.position.set(0.5 * s, 0, 0); wr.add(tipR);
   const tail = new THREE.Mesh(B(0.16 * s, 0.035, 0.16 * s), tailC); tail.position.set(0, 0.02 * s, -0.28 * s); g.add(tail);
   const head = new THREE.Mesh(B(0.1 * s, 0.095 * s, 0.14 * s), white); head.position.set(0, 0.05 * s, 0.28 * s); g.add(head);
   const beak = new THREE.Mesh(B(0.028 * s, 0.028 * s, 0.09 * s), beakC); beak.position.set(0, 0.03 * s, 0.37 * s); g.add(beak);
@@ -59820,9 +59913,9 @@ function makeGull(cx, cz, rx, rz, h, speed, ph, s, perchAt){
   const legR = legL.clone(); legR.position.x = 0.05 * s;
   legs.add(legL); legs.add(legR); legs.visible = false; g.add(legs);
   scene.add(g);
-  const a = { g, wl, wr, head, legs, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 3, flapRate: 5.5 + Math.random() * 1.5,
+  const a = { g, wl, wr, head, legs, tipL, tipR, cx, cz, rx, rz, h, speed, ph, flapPh: ph * 0.16, flapRate: 2.2 + Math.random() * 0.9,
     driftPh: ph + Math.random() * 3, driftSp: 0.03 + Math.random() * 0.03,
-    gliding: 0, glideT: 3 + Math.random() * 6,
+    flapT: 0, glideT: 2 + Math.random() * 5,
     stoop: 0, stoopT: 8 + Math.random() * 22, stoopFrom: null, stoopTo: null,
     perchAt, preen: 4 + Math.random() * 12 };
   gulls.push(a);
@@ -59859,49 +59952,56 @@ function updateGulls(dt, dayF){
         b.perchAt.z);
       b.g.rotation.set(preening ? 0.5 : 0,
         b.perchAt.ry + Math.sin(tSim * 0.33 + b.flapPh) * 0.7, 0);
-      b.wl.rotation.y = 1.25; b.wr.rotation.y = -1.25;
+      wingPose(b.wl, b.wr, 0.18, 0.55, b.tipL, b.tipR);   /* folded, swept back */
       b.legs.visible = true;
       b.head.rotation.y = preening ? 0.2 : Math.sin(tSim * 0.6 + b.flapPh) * 0.9;
       continue;
     }
-    b.ph += b.speed * dt;
-    /* glides: hold the wings out and sink slowly, then flap back to it */
-    if (b.gliding > 0){
-      b.gliding -= dt;
-    } else {
-      b.glideT -= dt;
-      if (b.glideT <= 0){ b.gliding = 1.2 + Math.random() * 1.4; b.glideT = 5 + Math.random() * 6; }
-    }
-    /* stoops: sudden plunge to the water, then a pull-up back to the circuit */
-    if (b.stoop <= 0 && b.stoopT > 0) b.stoopT -= dt;
-    if (b.stoopT <= 0 && b.stoop <= 0){
-      const zt = 205 + Math.random() * 110;
-      const wwc = waterHalfWidth(zt);
-      b.stoopFrom = { x: b.g.position.x, y: b.g.position.y, z: b.g.position.z };
-      b.stoopTo = { x: waterCenterX(zt) + (Math.random() - 0.5) * wwc * 1.1, y: WATER_Y + 1.3, z: zt };
-      b.stoop = 0.0001;
+    b.ph += b.speed * (0.75 + 0.45 * Math.sin(tSim * 0.13 + b.driftPh)) * dt;   /* pace varies */
+    const ocx = b.cx + Math.sin(tSim * 0.05 + b.driftPh) * 7;                   /* the circuit itself wanders */
+    const ocz = b.cz + Math.cos(tSim * 0.043 + b.driftPh * 1.3) * 7;
+    const yCircuit = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh))
+                   + Math.sin(b.ph * 2.3 + b.flapPh * 3) * 1.2;
+    /* flapping: short power bursts to keep height, then long held-wing glides */
+    if (b.stoop === 0){
+      if (b.flapT > 0) b.flapT -= dt;
+      else {
+        b.glideT -= dt;
+        if (b.glideT <= 0 || yCircuit - b.g.position.y < 1.8){   /* lost height: power up */
+          b.flapT = 0.8 + Math.random() * 0.9;
+          b.glideT = 3 + Math.random() * 5;
+        }
+      }
+      /* stoops: sudden plunge to the water, then a pull-up back to the circuit */
+      if (b.stoopT > 0) b.stoopT -= dt;
+      if (b.stoopT <= 0){
+        const zt = 205 + Math.random() * 110;
+        const wwc = waterHalfWidth(zt);
+        b.stoopFrom = { x: b.g.position.x, y: b.g.position.y, z: b.g.position.z };
+        b.stoopTo = { x: waterCenterX(zt) + (Math.random() - 0.5) * wwc * 1.1, y: WATER_Y + 1.3, z: zt };
+        b.stoop = 0.0001;
+      }
     }
     if (b.stoop > 0.00005){
-      /* diving — wings swept back */
+      /* diving — wings swept back and tucked, nose into the water */
       b.stoop += dt / 1.15;
       const e = b.stoop >= 1 ? 1 : b.stoop * b.stoop * (3 - 2 * b.stoop);
       b.g.position.set(
         b.stoopFrom.x + (b.stoopTo.x - b.stoopFrom.x) * e,
         b.stoopFrom.y + (b.stoopTo.y - b.stoopFrom.y) * e,
         b.stoopFrom.z + (b.stoopTo.z - b.stoopFrom.z) * e);
-      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-      const flap = Math.sin(tSim * (b.flapRate + 4) + b.flapPh) * 0.25;
-      b.wl.rotation.y = -0.6 + flap; b.wr.rotation.y = 0.6 - flap;
-      b.g.rotation.z = Math.sin(b.ph * 2) * 0.22;
+      orientBird(b, dt, 0.3, 1.15);
+      wingPose(b.wl, b.wr, 0.3, 0.85, b.tipL, b.tipR);
+      b.head.rotation.x = -0.1;
       b.legs.visible = false;
-      if (b.stoop >= 1.55){
+      if (b.stoop >= 1.3){
         /* pull-up: climb from the water back up to the circuit */
         b.stoopFrom = { x: b.stoopTo.x, y: WATER_Y + 1.3, z: b.stoopTo.z };
-        b.stoopTo = { x: b.cx + Math.cos(b.ph) * b.rx, y: b.h + 3, z: b.cz + Math.sin(b.ph) * b.rz };
+        b.stoopTo = { x: ocx + Math.cos(b.ph) * b.rx, y: b.h + 3, z: ocz + Math.sin(b.ph) * b.rz };
         b.stoop = -1;
       }
     } else if (b.stoop < -0.00005){
-      /* climbing back out of the water */
+      /* climbing back out of the water — power flaps, easing into the glide */
       b.stoop += dt / 1.9;
       const p = clamp01(b.stoop + 1);
       const e = p * p * (3 - 2 * p);
@@ -59909,25 +60009,35 @@ function updateGulls(dt, dayF){
         b.stoopFrom.x + (b.stoopTo.x - b.stoopFrom.x) * e,
         b.stoopFrom.y + (b.stoopTo.y - b.stoopFrom.y) * e,
         b.stoopFrom.z + (b.stoopTo.z - b.stoopFrom.z) * e);
-      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-      const flap = Math.sin(tSim * b.flapRate + b.flapPh);
-      b.wl.rotation.y = flap * 0.9; b.wr.rotation.y = -flap * 0.9;
-      b.g.rotation.z = 0;
+      let f, sweep;
+      if (p < 0.55){ f = flapWave(tSim, b.flapRate * 1.6, b.flapPh) * 0.85; sweep = 0.25; }
+      else { f = -0.24; sweep = 0.05 * Math.sin(tSim * 0.7 + b.flapPh); }
+      orientBird(b, dt, 0.35, 0.9);
+      wingPose(b.wl, b.wr, f, sweep, b.tipL, b.tipR);
+      b.head.rotation.x = -0.12;
       b.legs.visible = false;
       if (b.stoop >= 0){ b.stoop = 0; b.stoopT = 16 + Math.random() * 24; }
     } else {
       /* the lazy wheel: drifting circuit, glides, gentle bob */
       const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
-      const x = b.cx + Math.cos(b.ph) * b.rx * dm;
-      const z = b.cz + Math.sin(b.ph) * b.rz * dm;
-      const y = b.h * (1 + 0.1 * Math.sin(tSim * b.driftSp * 1.3 + b.driftPh))
-              + Math.sin(b.ph * 2.3 + b.flapPh) * 1.2 - (b.gliding > 0 ? 0.9 : 0);
-      b.g.position.set(x, y, z);
-      b.g.rotation.y = -b.ph + (b.speed > 0 ? 0 : Math.PI);
-      const flap = Math.sin(tSim * b.flapRate + b.flapPh);
-      const amp = b.gliding > 0 ? 0.06 : 0.75;   /* held wings on the glide */
-      b.wl.rotation.y = flap * amp; b.wr.rotation.y = -flap * amp;
-      b.g.rotation.z = 0;
+      const gliding = b.flapT <= 0;
+      b.g.position.set(
+        ocx + Math.cos(b.ph) * b.rx * dm,
+        yCircuit - (gliding ? 0.9 : 0),
+        ocz + Math.sin(b.ph) * b.rz * dm);
+      let f, sweep;
+      if (gliding){
+        /* held-wing V with a slow rock and an in-out sweep */
+        f = -0.26 + Math.sin(tSim * 0.9 + b.flapPh * 3) * 0.05;
+        sweep = 0.1 * Math.sin(tSim * 0.6 + b.flapPh * 3);
+      } else {
+        f = flapWave(tSim, b.flapRate, b.flapPh);
+        sweep = 0.12;
+        b.g.position.y += f * 0.05;   /* body bob with the stroke */
+      }
+      orientBird(b, dt, 0.55, 0.5);
+      wingPose(b.wl, b.wr, f, sweep, b.tipL, b.tipR);
+      b.head.rotation.x = gliding ? 0 : -f * 0.12;
       b.legs.visible = false;
     }
   }
@@ -59947,7 +60057,8 @@ const bats = [];
     scene.add(g);
     bats.push({ g, wl, wr, cx: (hash(i, 61) - 0.5) * 80, cz: (hash(i, 62) - 0.5) * 80,
       rx: 6 + hash(i, 63) * 10, rz: 5 + hash(i, 64) * 9, h: 7 + hash(i, 65) * 7,
-      speed: 0.5 + hash(i, 66) * 0.5, ph: hash(i, 67) * 6.28 });
+      speed: 0.5 + hash(i, 66) * 0.5, ph: hash(i, 67) * 6.28,
+      flapPh: hash(i, 68), flapRate: 5.5 + hash(i, 69) * 2 });
     NIGHT_ANIMALS.push({ g, night: true });
   }
 }
@@ -59962,10 +60073,10 @@ function updateBats(dt, dayF){
       b.h + Math.sin(b.ph * 3.1) * 1.5,
       b.cz + Math.sin(b.ph) * b.rz
     );
-    b.g.rotation.y = -b.ph;
-    const flap = Math.sin(tSim * 18 + b.ph * 5);
-    b.wl.rotation.y = flap * 0.9;
-    b.wr.rotation.y = -flap * 0.9;
+    orientBird(b, dt, 0.7, 0.5);
+    /* no gliding — bats never stop flapping, just slower when climbing */
+    const f = flapWave(tSim, b.flapRate, b.flapPh) * 0.9;
+    wingPose(b.wl, b.wr, f, 0.15);
   }
 }
 
@@ -60091,9 +60202,11 @@ function updateNav(dt){
   }
   controls.target.x = clampN(controls.target.x, -280, 280);
   controls.target.z = clampN(controls.target.z, -280, 280);
-  const gh = groundH(controls.target.x, controls.target.z);
-  controls.target.y = Math.max(controls.target.y, gh + 0.4);
-  controls.target.y += ((gh + 2.5) - controls.target.y) * (1 - Math.exp(-dt * 1.5));
+  if (!window.__RC_FREECAM__){   /* walker ground-follow — keeps the view from sinking; disabled for aerial framing */
+    const gh = groundH(controls.target.x, controls.target.z);
+    controls.target.y = Math.max(controls.target.y, gh + 0.4);
+    controls.target.y += ((gh + 2.5) - controls.target.y) * (1 - Math.exp(-dt * 1.5));
+  }
 }
 
 /* ---------- clock UI ---------- */
@@ -60282,7 +60395,8 @@ window.__RC_WX__ = {   /* debug: season/weather inspection + test hooks */
   jumpDay: (d) => { simDay = d; },
   seasonName: () => SEASON_NAMES[season],
 };
-window.__RC_CAM__ = { camera, controls };   /* debug: move the camera from console / harness */
+window.__RC_CAM__ = { camera, controls, scene };   /* debug: move the camera from console / harness */
+window._gulls = gulls; window._bats = bats; window._birds = birds;   /* debug: bird handles (deer/rabbits/foxes above) */
 
 window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt now */
 
