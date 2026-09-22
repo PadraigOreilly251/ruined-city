@@ -54720,6 +54720,25 @@ function columns(cells, material, noShadow){
                      upright. Gondolas that fell off lie tumbled below.
    West meadow ..... x −96…−150: rolling grass, hero trees, wildflowers,
                      deer herd, rabbits, squirrels.
+   Watershed ..... (-165, 255) on the shoulder above the cove, west of the
+                     river: a 26x19 m concrete reservoir, 5.5 m deep, drained
+                     and breached on the west face (rubble thrown out through
+                     the gap). Buttressed on the three standing walls, rim
+                     coping walk, damp staining at the old waterline, cracked
+                     silt floor. A 44 m steel main on eight trestles runs north
+                     from the valve house and breaks mid-span, the far end
+                     dropped into a gully.
+   Listening array .. (4, 256) on the cove-edge ridge, west of the river:
+                     three rhombic antenna curtains (25 m between masts) aimed
+                     due south-east down the cove at open water, each a
+                     diamond of six-wire faces between corner masts, the
+                     middle curtain broken. Cabled down the rear masts into a
+                     trench that gathers along the firing line to a bunker:
+                     poured concrete, roof slab, blast collar + armoured door
+                     facing inland, cut steps down to it, two vent pipes and
+                     a stub aerial on top. Ground slopes 10 m across the site,
+                     so the masts are each cut to their own height.
+                     Both sites are kept clear of trees by CLEAR_ZONES.
    Hill forest ..... beyond r≈120 wherever terrain ≥ 2.5m (instanced pines).
    Wildlife ........ deer (west meadow), foxes (city, nocturnal), crows +
                      day birds + bats, gulls (cove, day: wheel, stoop, roost
@@ -55640,6 +55659,10 @@ const CLEAR_ZONES = [
   { x: 20,  z: 60,  r: 15 },   /* anchor tower C (open roof) */
   { x: -120, z: 81, r: 38 },   /* cathedral, NW meadow */
 ];
+CLEAR_ZONES.push(
+  { x: -165, z: 255, r: 30 },   /* the watershed: reservoir + valve house + main */
+  { x: 4,    z: 256, r: 37 }    /* the listening array: an antenna field is cleared land */
+);
 const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
 
 /* ---------- building placement across the 4x4 blocks ---------- */
@@ -56740,6 +56763,343 @@ columns(rubbleCells, lamber(0xffffff));   /* crane rubble added after the shared
   cells.push({ x: X + 9.6, z: Z + 2, y: gy + 14, sy: 2, sx: 5.8, sz: 5.8, rz: 0.07, color: 0x6a6258 });
   cells.push({ x: X - 4.05, z: Z + 3, y: gy, sy: 4, sx: 0.09, sz: 8, color: IVY_G[0] });
   columns(cells, lamber(0xffffff));
+}
+
+/* ---------- the watershed: a hill-top reservoir + its gravity main ----------
+   A town's water, cut into the crest and long since drained. Reading it from
+   the far hills: a pale rectangular rim, a breach in one wall, and a pipe
+   on failed trestles running down the ridge toward a city it never reached. */
+{
+  const X = -165, Z = 255, g = groundH(X, Z);
+  const TW = 26, TD = 19;                       /* tank footprint (x, z) */
+  /* the tank was cut level into a sloping crest: the floor sits at the highest
+     ground inside the footprint, so the uphill side is shallow and the seaward
+     side deep. Sampled, not guessed, or the walls would float. */
+  let floorY = -1e9;
+  for (let i = 0; i <= 5; i++) for (let j = 0; j <= 5; j++)
+    floorY = Math.max(floorY, groundH(X - TW / 2 + TW * i / 5, Z - TD / 2 + TD * j / 5));
+  floorY -= 0.15;
+  const wallTop = floorY + 4.4, WT = 1.3;
+  const cells = [];
+  /* four walls, each panel sunk 1.1 into its own ground, tops perfectly level
+     (a full tank holds its water to one level). Breach left in the W wall. */
+  const sides = [
+    ['z', -TD / 2, 'x'], ['z', TD / 2, 'x'],
+    ['x', -TW / 2, 'z'], ['x', TW / 2, 'z'],
+  ];
+  sides.forEach(([fixed, off, run], si) => {
+    const PANELS = 4;
+    for (let p = 0; p < PANELS; p++){
+      /* the W wall loses panels 1-2: the breach the town died of */
+      if (si === 2 && (p === 1 || p === 2)) continue;
+      const t0 = -run === 'x' ? 0 : 0;
+      const along = (-1 + 2 * (p + 0.5) / PANELS) * (run === 'x' ? TW / 2 : TD / 2) * 0.98;
+      const px = fixed === 'z' ? X + along : X + off;
+      const pz = fixed === 'z' ? Z + off : Z + along;
+      const gl = groundH(px, pz);
+      const base = gl - 1.1, topY = wallTop;
+      const len = run === 'x' ? TW / PANELS * 0.99 : TD / PANELS * 0.99;
+      /* panel crowns jagged a little so the rim is not one clean knife edge */
+      const jag = (si === 3 || si === 1) ? (hash(si * 17 + p, 71) - 0.5) * 0.7 : 0;
+      cells.push({ x: px, z: pz, y: base, sy: (topY + jag) - base,
+        sx: run === 'x' ? len : WT, sz: run === 'z' ? len : WT,
+        ry: 0, color: concColor(si * 31 + p * 7 + 3, 0.11 + hash(si, p + 9) * 0.10) });
+      /* damp staining up the inside face below the old waterline */
+      if (p % 2 === 0)
+        cells.push({ x: fixed === 'z' ? px : px + (fixed === 'x' && off < 0 ? 0.9 : -0.9),
+          z: fixed === 'z' ? pz + (off < 0 ? 0.9 : -0.9) : pz,
+          y: floorY, sy: 1.15, sx: run === 'x' ? len * 0.92 : 0.16,
+          sz: run === 'z' ? len * 0.92 : 0.16, color: 0x6d6a5c });
+    }
+  });
+  /* buttresses. Without these a walled box reads as a pen; a row of them on
+     the outface is what says "engineering, not enclosure". Placed on the
+     three standing walls — the breached one would have gone first. */
+  for (let si = 0; si < 4; si++){
+    if (si === 2) continue;
+    const [fixed, off, run] = sides[si];
+    const NP = run === 'x' ? 5 : 4;
+    const sgn = off < 0 ? -1 : 1;
+    for (let k = 0; k < NP; k++){
+      const along = (-1 + 2 * (k + 0.5) / NP) * (run === 'x' ? TW / 2 : TD / 2) * 0.94;
+      const bx2 = fixed === 'z' ? X + along : X + off + sgn * 0.95;
+      const bz2 = fixed === 'z' ? Z + off + sgn * 0.95 : Z + along;
+      const g0 = groundH(bx2, bz2);
+      const topB = wallTop - 1.5;
+      if (topB <= g0) continue;
+      cells.push({ x: bx2, z: bz2, y: g0 - 0.5, sy: topB - (g0 - 0.5),
+        sx: run === 'x' ? 1.5 : 1.25, sz: run === 'z' ? 1.5 : 1.25,
+        color: concColor(si * 23 + k * 11 + 17, 0.08 + hash(si, k + 5) * 0.08) });
+      /* the sloped shoulder of the buttress */
+      cells.push({ x: bx2 + (fixed === 'x' ? sgn * 0.45 : 0),
+        z: bz2 + (fixed === 'z' ? sgn * 0.45 : 0),
+        y: topB, sy: 0.55, sx: run === 'x' ? 1.05 : 0.85, sz: run === 'z' ? 1.05 : 0.85,
+        color: concColor(si * 23 + k * 11 + 19, 0.16) });
+    }
+  }
+  /* dry silt floor + the cracked mud that was left when it drained */
+  cells.push({ x: X, z: Z, y: floorY, sy: 0.35, sx: TW - 1.4, sz: TD - 1.4, color: 0x6a6350 });
+  for (let i = 0; i < 16; i++){
+    const px = X + (hash(i, 201) - 0.5) * (TW - 4), pz = Z + (hash(i, 202) - 0.5) * (TD - 4);
+    cells.push({ x: px, z: pz, y: floorY + 0.35, sy: 0.06 + hash(i, 203) * 0.14,
+      sx: 1.2 + hash(i, 204) * 3.4, sz: 0.9 + hash(i, 205) * 2.6,
+      ry: hash(i, 206) * 3, color: hash(i, 207) < 0.5 ? 0x5f5947 : 0x7a7159 });
+  }
+  /* rim walkway: a pale coping all the way round, broken away at the breach */
+  for (let i = 0; i < 40; i++){
+    const t = i / 40, a = t * Math.PI * 2;
+    const px = X + Math.cos(a) * (TW / 2 + 0.5), pz = Z + Math.sin(a) * (TD / 2 + 0.5);
+    if (px < X - TW * 0.12 && px > X - TW * 0.55 && Math.abs(pz - Z) < TD * 0.45) continue;   /* gone at the breach */
+    if (groundH(px, pz) > wallTop + 0.4) continue;   /* the hill rises through the walk */
+    cells.push({ x: px, z: pz, y: wallTop - 0.05, sy: 0.22, sx: 1.5, sz: 1.5,
+      ry: hash(i, 211) * 3, color: concColor(i * 5 + 11, 0.42) });
+  }
+  /* rubble thrown out through the west breach */
+  for (let i = 0; i < 14; i++){
+    const d = 2 + hash(i, 221) * 13;
+    const px = X - TW / 2 - d * (0.4 + hash(i, 222) * 0.6);
+    const pz = Z + (hash(i, 223) - 0.5) * 12;
+    const s = 0.5 + hash(i, 224) * 1.9;
+    cells.push({ x: px, z: pz, y: groundH(px, pz) - 0.25, sy: s * 0.7, sx: s, sz: s * 0.85,
+      ry: hash(i, 225) * 3, rz: (hash(i, 226) - 0.5) * 0.5, color: concColor(i * 9 + 2, 0.24) });
+  }
+  /* valve house at the NE corner: walls, a roof fallen in on one side, a wheel */
+  const VX = X + TW / 2 + 4.2, VZ = Z - TD / 2 - 1.4, vg = groundH(VX, VZ);
+  cells.push({ x: VX, z: VZ - 2.6, y: vg - 0.9, sy: 3.4, sx: 6.2, sz: 0.6, color: concColor(41, 0.26) });
+  cells.push({ x: VX - 3.1, z: VZ, y: vg - 0.9, sy: 3.4, sx: 0.6, sz: 5.8, color: concColor(42, 0.22) });
+  cells.push({ x: VX + 3.1, z: VZ + 1.2, y: vg - 0.9, sy: 2.1, sx: 0.6, sz: 3.6, color: concColor(43, 0.30) });
+  cells.push({ x: VX - 1.5, z: VZ, y: vg + 2.5, sy: 0.3, sx: 4.4, sz: 5.6, rz: 0.16,
+    color: 0x57534a });                              /* roof, slipped off its bearings */
+  const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.13, 6, 16), lamber(0x8c3f2a));
+  wheel.position.set(VX + 1.5, vg + 1.1, VZ + 0.4); wheel.rotation.set(0.2, 0.4, 0);
+  wheel.castShadow = true; scene.add(wheel);
+  columns(cells, lamber(0xffffff));
+
+  /* the main: 81 m down the ridge. The ground drops 13.8 m but not evenly —
+     it falls away steepest in the middle, so a straight pipe on a straight
+     grade stands clear of the hillside there and reads as an aqueduct. Where
+     one trestle failed the span sagged to the ground and burst. */
+  const RX = X + 3, RZ = Z - TD / 2 - 2.2;
+  const EX = -150, EZ = 175, L = Math.hypot(EX - RX, EZ - RZ);
+  const y0 = wallTop - 0.6, y1 = groundH(EX, EZ) + 1.8;
+  const FAIL = 0.58;                                  /* where the trestle gave */
+  const pipeMat = lamber(0x9c9689), postMat = lamber(0x6f6a5e);
+  const N = 27;
+  const GAP = 0.085;                                  /* the span that is no longer there */
+  /* A pressurised main runs dead straight. It does not droop; when a bent
+     fails the span comes off the line entirely, so the profile is broken,
+     not bent. */
+  const ptAt = t => new THREE.Vector3(
+    RX + (EX - RX) * t, lerpN(y0, y1, t), RZ + (EZ - RZ) * t);
+  const UP = new THREE.Vector3(0, 1, 0), q = new THREE.Quaternion();
+  const unitBox = new THREE.BoxGeometry(1, 1, 1), unitCyl = new THREE.CylinderGeometry(0.62, 0.62, 1, 10);
+  const addSeg = (a, b, mat) => {
+    const d = new THREE.Vector3().subVectors(b, a), len = d.length();
+    const m = new THREE.Mesh(unitCyl, mat || pipeMat);
+    m.position.copy(a).addScaledVector(d, 0.5);
+    q.setFromUnitVectors(UP, d.clone().normalize()); m.quaternion.copy(q);
+    m.scale.set(1, len, 1); m.castShadow = true; m.receiveShadow = true; scene.add(m);
+    return m;
+  };
+  const dir = new THREE.Vector2(EX - RX, EZ - RZ).normalize();
+  const nx = -dir.y, nz = dir.x;
+  for (let i = 0; i < N; i++){
+    const tm = (i + 0.5) / N;
+    if (tm > FAIL - GAP && tm < FAIL + GAP) continue;   /* the missing span */
+    const a = ptAt(i / N), b = ptAt((i + 1) / N);
+    addSeg(a, b);
+    /* trestles: two legs + a cap, only where the pipe is actually airborne */
+    if (i % 2 === 0 && i !== 0){
+      const gp = groundH(a.x, a.z), clr = a.y - gp;
+      if (clr > 1.0){
+        for (const s of [-1, 1]){
+          const px = a.x + nx * s * 1.05, pz = a.z + nz * s * 1.05;
+          const p = new THREE.Mesh(unitBox, postMat);
+          p.position.set(px, gp + (a.y - 0.7 - gp) / 2, pz);
+          p.scale.set(0.42, Math.max(0.3, a.y - 0.7 - gp), 0.42);
+          p.castShadow = true; scene.add(p);
+        }
+        const cap = new THREE.Mesh(unitBox, postMat);
+        cap.position.set(a.x, a.y - 0.78, a.z); cap.scale.set(2.9, 0.28, 1.0); cap.castShadow = true;
+        scene.add(cap);
+      }
+    }
+  }
+  /* The failure, as a broken main actually leaves it. Up-gradient the line has
+     nothing under it and hung, then sprang down: the end points at the ground.
+     Down-gradient the stub is the side that drained. Between them, nothing. */
+  const aEnd = ptAt(FAIL - GAP), bEnd = ptAt(FAIL + GAP);
+  const gB2 = groundH(bEnd.x, bEnd.z);
+  const hang = aEnd.clone().addScaledVector(new THREE.Vector3(aEnd.x - bEnd.x, 0, aEnd.z - bEnd.z), 0.14)
+    .setY(aEnd.y - 2.9);
+  addSeg(aEnd, hang, lamber(0x8f897c));
+  addSeg(bEnd, new THREE.Vector3(bEnd.x, gB2 + 0.5, bEnd.z), lamber(0x8b857a));
+  /* the burst: water scoured the hillside and the pipe lies open */
+  const bx = RX + (EX - RX) * FAIL, bz = RZ + (EZ - RZ) * FAIL;
+  const sc = [];
+  for (let i = 0; i < 22; i++){
+    const d = 1 + hash(i, 231) * 12;
+    const px = bx - (EX - RX) / L * d * 0.15 + (hash(i, 232) - 0.5) * 8;
+    const pz = bz + d * 0.9 + (hash(i, 233) - 0.5) * 5;
+    if (groundH(px, pz) < 1.2) continue;
+    sc.push({ x: px, z: pz, y: groundH(px, pz) - 0.1, sy: 0.12 + hash(i, 234) * 0.2,
+      sx: 1.4 + hash(i, 235) * 3.2, sz: 1.1 + hash(i, 236) * 2.6,
+      ry: hash(i, 237) * 3, color: hash(i, 238) < 0.45 ? 0x4e4a3e : 0x635c4b });
+  }
+  /* the span that came down, lying in three lengths where it landed */
+  for (let i = 0; i < 3; i++){
+    const fa = 1.1 + hash(i, 241) * 1.9;
+    const px = bx + Math.cos(fa) * (2.5 + i * 2.6), pz = bz + Math.sin(fa) * (2.5 + i * 2.6);
+    sc.push({ x: px, z: pz, y: groundH(px, pz) - 0.18, sy: 1.05, sx: 4.6, sz: 1.05,
+      ry: -fa + Math.PI / 2, rz: 0.12, color: 0x847e73 });
+  }
+  columns(sc, lamber(0xffffff));
+}
+
+/* ---------- the listening array: rhombic curtains aimed at the sea ----------
+   A shore-based HF fence. Three curtains on one firing line, all pointed
+   down the cove mouth to open water, feeding a buried bunker. What sells
+   it is not the masts — it is the wires hanging slack and the one curtain
+   that came down and is still lying where it fell. */
+{
+  const X = 4, Z = 256, gy = groundH(X, Z);
+  const TH = Math.atan2(119 - X, 330 - Z);        /* aim: the cove mouth, open sea beyond */
+  const ux = Math.sin(TH), uz = Math.cos(TH);     /* along the beam */
+  const vx = Math.cos(TH), vz = -Math.sin(TH);    /* along the firing line */
+  const P = (s, t) => ({ x: X + ux * s + vx * t, z: Z + uz * s + vz * t });
+
+  const wires = [];                               /* one LineSegments for the whole array */
+  const strand = (a, ha, b, hb, sag) => {
+    const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2;
+    wires.push(a.x, ha, a.z, mx, (ha + hb) / 2 - sag, mz);
+    wires.push(mx, (ha + hb) / 2 - sag, mz, b.x, hb, b.z);
+  };
+
+  const poles = [], fittings = [];
+  const addPole = (s, t, h, seed, brokenAt) => {
+    const p = P(s, t), g0 = groundH(p.x, p.z);
+    const w = 0.44;
+    if (brokenAt){
+      /* sheared off at the collar: the bottom stands, the top lies on the ground */
+      const stump = h * brokenAt;
+      poles.push({ x: p.x, z: p.z, y: g0 - 0.2, sy: stump, sx: w, sz: w, color: 0x8a8072 });
+      const fa = hash(seed, 401) * 3;
+      const fx = p.x + Math.cos(fa) * h * 0.42, fz = p.z + Math.sin(fa) * h * 0.42;
+      poles.push({ x: (p.x + fx) / 2, z: (p.z + fz) / 2,
+        y: Math.min(g0, groundH(fx, fz)) + 0.22,
+        sy: h * (1 - brokenAt) * 0.94, sx: w * 0.95, sz: w * 0.95,
+        rz: Math.PI / 2 - 0.09, ry: -fa + Math.PI / 2, color: 0x7e7466 });
+      return { x: p.x, z: p.z, top: g0 + stump, broken: true };
+    }
+    poles.push({ x: p.x, z: p.z, y: g0 - 0.2, sy: h, sx: w, sz: w, color: 0x8a8072 });
+    poles.push({ x: p.x, z: p.z, y: g0 + h, sy: 0.5, sx: w * 1.5, sz: w * 1.5, color: 0x6f6659 });
+    fittings.push({ x: p.x, z: p.z, y: g0 + h - 0.8, sy: 0.16, sx: 1.9, sz: 0.16, ry: TH, color: 0x5d564b });
+    return { x: p.x, z: p.z, top: g0 + h, broken: false };
+  };
+
+  for (let c = -1; c <= 1; c++){
+    const t0 = c * 25;
+    const alive = c !== 0;                        /* the middle curtain came down */
+    const R = addPole(-15, t0, 12.0, c * 7 + 1, alive ? 0 : 0.28);
+    const F = addPole(15, t0, 8.6, c * 7 + 2, alive ? 0 : 0.42);
+    const L = addPole(0, t0 - 9.5, 10.4, c * 7 + 3, 0);
+    const Rt = addPole(0, t0 + 9.5, 10.4, c * 7 + 4, 0);
+    /* the curtain itself: five strands per face, each hanging a little deeper */
+    const faces = [[R, L], [L, F], [F, Rt], [Rt, R]];
+    for (const [a, b] of faces){
+      if (a.broken || b.broken) continue;
+      for (let k = 0; k < 6; k++)
+        strand(a, a.top - 0.4 - k * 0.55, b, b.top - 0.4 - k * 0.55, 0.30 + k * 0.40);
+    }
+    /* dead curtain: what survived hangs on the two good poles, the rest is on the ground */
+    if (!alive){
+      strand(L, L.top - 0.5, Rt, Rt.top - 0.5, 2.6);
+      const gp = groundH(L.x + 4, L.z + 4);
+      wires.push(L.x, L.top - 1.2, L.z, L.x + 5, gp + 0.25, L.z + 3);
+      wires.push(Rt.x, Rt.top - 1.2, Rt.z, L.x + 5, gp + 0.25, L.z + 3);
+      const cf = groundH(L.x + 5, L.z + 3);
+      for (let k = 0; k < 7; k++){
+        const a = hash(k, 91) * 3, r = 0.8 + hash(k, 92) * 3.4;
+        const x1 = L.x + 5 + Math.cos(a) * r, z1 = L.z + 3 + Math.sin(a) * r;
+        const a2 = a + 1.4 + hash(k, 93), r2 = 0.6 + hash(k, 94) * 3.0;
+        wires.push(x1, cf + 0.12, z1, x1 + Math.cos(a2) * r2, cf + 0.1, z1 + Math.sin(a2) * r2);
+      }
+    }
+    /* the down-lead from the rear mast back to the cable duct */
+    if (alive) strand(R, R.top - 1.4, P(-21, t0), groundH(P(-21, t0).x, P(-21, t0).z) + 0.9, 0.5);
+  }
+
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute(wires, 3));
+  const wireMesh = new THREE.LineSegments(lg,
+    new THREE.LineBasicMaterial({ color: 0x3f3a33, transparent: true, opacity: 0.85 }));
+  wireMesh.frustumCulled = true; scene.add(wireMesh);
+  columns(poles, lamber(0xffffff));
+  columns(fittings, lamber(0xffffff), true);
+
+  /* the bunker: poured concrete, half under the turf, door facing inland.
+     The ground here dips, so the box is built tall enough to stand clear of
+     the ridge in front of it — a bunker you cannot see is not a landmark. */
+  const B = P(-28, 0), bg = groundH(B.x, B.z);
+  const bc = [];
+  bc.push({ x: B.x, z: B.z, y: bg - 2.6, sy: 4.9, sx: 11.5, sz: 8.0, ry: TH, color: concColor(71, 0.13) });
+  bc.push({ x: B.x, z: B.z, y: bg + 2.25, sy: 0.5, sx: 12.8, sz: 9.2, ry: TH, color: concColor(72, 0.20) });
+  /* blast collar round the door + the door itself, on the landward face */
+  const dpx = B.x - ux * 5.9, dpz = B.z - uz * 5.9;
+  bc.push({ x: dpx, z: dpz, y: bg - 2.55, sy: 2.9, sx: 1.9, sz: 0.4, ry: TH, color: 0x43403a });
+  bc.push({ x: B.x - ux * 6.05, z: B.z - uz * 6.05, y: bg + 0.55, sy: 0.35, sx: 2.9, sz: 0.35, ry: TH,
+    color: concColor(73, 0.24) });
+  /* steps cut down to the door from the high side */
+  for (let i = 0; i < 5; i++){
+    const p = P(-35 - i * 1.15, 0);
+    const g0 = groundH(p.x, p.z);
+    bc.push({ x: p.x, z: p.z, y: g0 - 0.1, sy: 0.34, sx: 1.1, sz: 2.6, ry: TH,
+      color: concColor(80 + i, 0.18) });
+  }
+  /* turf piled over the roof — the blast berm that half the task was */
+  for (let i = 0; i < 22; i++){
+    const s = (hash(i, 311) - 0.5) * 13, t = (hash(i, 312) - 0.5) * 10.5;
+    const p = P(-28 + s, t);
+    if (groundH(p.x, p.z) > bg + 1.6) continue;
+    bc.push({ x: p.x, z: p.z, y: bg + 1.28, sy: 0.3 + hash(i, 313) * 0.35,
+      sx: 2.0 + hash(i, 314) * 2.4, sz: 1.6 + hash(i, 315) * 2.2,
+      ry: hash(i, 316) * 3, color: hash(i, 317) < 0.5 ? 0x5f6b45 : 0x6d7a4e });
+  }
+  /* two vent pipes and the cable duct running up the firing line to the curtains */
+  for (const vs of [[-2.6, -2.2], [2.6, 2.0]]){
+    const p = P(-28 + vs[0], vs[1]);
+    const v = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 2.3, 8), lamber(0x6b6258));
+    v.position.set(p.x, bg + 2.1, p.z); v.castShadow = true; scene.add(v);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.18, 8), lamber(0x554e45));
+    cap.position.set(p.x, bg + 3.3, p.z); scene.add(cap);
+  }
+  /* The cable run, not decoration: each rear mast's down-lead drops into a
+     trench that gathers along the firing line, then one trunk turns inland
+     to the bunker. Cables follow where a man would have dug them. */
+  const duct = [];
+  const trench = (s0, t0, s1, t1) => {
+    /* spacing tied to pad width so this reads as one continuous cut, not a
+     line of stepping stones; orientation solved in world space because the
+     legs run diagonally across the firing line */
+    const p0 = P(s0, t0), p1 = P(s1, t1);
+    const dx = p1.x - p0.x, dz = p1.z - p0.z;
+    const len = Math.hypot(dx, dz);
+    const ry = Math.atan2(-dz, dx);
+    const n = Math.max(2, Math.round(len / 1.7));
+    for (let i = 0; i <= n; i++){
+      const p = P(lerpN(s0, s1, i / n), lerpN(t0, t1, i / n));
+      const g0 = groundH(p.x, p.z);
+      if (g0 < 1.5) continue;
+      duct.push({ x: p.x, z: p.z, y: g0 + 0.03, sy: 0.22, sx: 2.1, sz: 1.7,
+        ry: ry + (hash(s0 * 31 + i, 321) - 0.5) * 0.14, color: 0x4c463d });
+    }
+  };
+  for (const c of [-1, 0, 1]){
+    if (c !== 0) trench(-15, c * 25, -19, c * 15);        /* mast -> firing-line trench */
+    trench(-19, c * 15, -19, 0);                          /* gather along the line */
+  }
+  trench(-19, 0, -27, 0);                                 /* trunk to the bunker */
+  columns(duct, lamber(0xffffff), true);
 }
 
 /* ---------- derelict car, half-swallowed ---------- */
@@ -58119,6 +58479,7 @@ function treeRoof(x, z, baseY, h, seed){
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = groundH(x, z);
     if (h < 2.5) continue;
+    if (inClearZone(x, z)) continue;   /* the watershed + the listening array */
     if (hash(tries, 9) < 0.45) continue;   /* density variation */
     const s = 1.1 + hash(tries, 10) * 1.4;
     const v = hash(tries, 41);   /* silhouette mix: ~62% broadleaf, ~22% conifer, ~16% dead */
@@ -58161,6 +58522,7 @@ function treeRoof(x, z, baseY, h, seed){
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     const h = groundH(x, z);
     if (h < 2.5) continue;
+    if (inClearZone(x, z)) continue;   /* the watershed + the listening array */
     const s = 1.1 + hash(tries + 5000, 10) * 1.3;
     mTrunk.push({ x, z, y: h, sy: 3.4 * s, sx: 0.7 * s, sz: 0.7 * s, color: 0x5a4c3c });
     mapleCells.push({ x, z, y: h + 2.8 * s, sy: 3.6 * s, sx: 3.4 * s, sz: 3.2 * s,
@@ -58253,6 +58615,14 @@ function treeRoof(x, z, baseY, h, seed){
      "two giant cubes at the edge of the map" report. Sampling the footprint
      means the hill rises out of the terrain wherever it touches it. */
   const addHill = (x, z, w, d, rise, ry, ci) => {
+    /* No far-hill cell may stand over a reserved landmark lot — the same rule
+       that keeps the forest off them. Without it a hill's footprint buries the
+       watershed reservoir and the listening array whole. */
+    for (const c of CLEAR_ZONES){
+      const hx = Math.max(x - w / 2, Math.min(c.x, x + w / 2));
+      const hz = Math.max(z - d / 2, Math.min(c.z, z + d / 2));
+      if (Math.hypot(c.x - hx, c.z - hz) < c.r) return;
+    }
     let g = -1e9;
     for (let a = -1; a <= 1; a++)
       for (let b = -1; b <= 1; b++)
