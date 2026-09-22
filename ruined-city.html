@@ -35,6 +35,24 @@
     backdrop-filter:blur(4px);user-select:none;opacity:.8;
   }
   #mute:hover{opacity:1;}
+  #cross{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:11;
+    width:18px;height:18px;pointer-events:none;user-select:none;opacity:.85;
+  }
+  #cross:before,#cross:after{
+    content:'';position:absolute;background:#23281f;
+    box-shadow:0 0 1px 1px rgba(255,255,255,.4);
+  }
+  #cross:before{left:8px;top:0;width:2px;height:18px;}
+  #cross:after{top:8px;left:0;height:2px;width:18px;}
+  #coords{
+    position:fixed;bottom:44px;left:50%;transform:translateX(-50%);z-index:11;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#23281f;
+    background:rgba(214,218,200,.62);padding:4px 14px;border-radius:16px;
+    backdrop-filter:blur(4px);pointer-events:none;user-select:none;white-space:nowrap;
+    display:none;
+  }
+  #coords b{color:#4a3a2c;}
 </style>
 
 </head>
@@ -53,6 +71,8 @@
 <div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes</div>
 <div id="clock"></div>
 <div id="mute" title="toggle ambient sound">🔊</div>
+<div id="cross"></div>
+<div id="coords"></div>
 <script>
 /* three.js r160 (three.module.js inlined, export statement converted) */
 /**
@@ -56573,18 +56593,67 @@ columns(rubbleCells, lamber(0xffffff));   /* crane rubble added after the shared
   }
 }
 
-/* ---------- radio mast (leaning) ---------- */
+/* ---------- radio mast (leaning) — rebuilt as a real lattice ----------
+   Was four bare 42 m posts stuck in the clearing: no bracing, no taper,
+   nothing tying the legs together visually, so it read as four beams
+   jutting out of the forest rather than one tower. Now: tapering legs,
+   ring every joint, zigzag bracing, crossarm at the top, and guy wires
+   that anchor the lean so it actually reads as leaning. */
 {
-  const steel = lamber(0x7a5a4a);
-  const X = -150, Z = -120;
-  const gy = groundH(X, Z);
-  for(const s of [[-1.4,-1.4],[1.4,-1.4],[-1.4,1.4],[1.4,1.4]]){
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 42, 0.25), steel);
-    leg.position.set(X + s[0] * 0.9, gy + 20, Z + s[1] * 0.9);
-    leg.rotation.z = 0.045; leg.castShadow = true; scene.add(leg);
+  const X = -150, Z = -120, gy = groundH(X, Z);
+  const H = 42, SEG = 9, segH = H / SEG;
+  const g = new THREE.Group();
+  g.position.set(X, gy, Z);
+  g.rotation.z = 0.045;                    /* the lean — now legible via the guys */
+  scene.add(g);
+  const wAt = t => lerpN(3.8, 1.1, t);
+  const legC = [0x6e4f40, 0x7a5a4a, 0x836156];
+  const brC = lamber(0x5c4238);
+  for(let i = 0; i < SEG; i++){
+    const y0 = i * segH, y1 = (i + 1) * segH;
+    const wm = (wAt(i / SEG) + wAt((i + 1) / SEG)) / 2;
+    for(const s of [[-1,-1],[1,-1],[-1,1],[1,1]]){
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.34, segH + 0.05, 0.34), lamber(legC[i % 3]));
+      leg.position.set(wm * s[0], y0 + segH / 2, wm * s[1]);
+      leg.castShadow = true; g.add(leg);
+    }
+    /* horizontal ring at the joint */
+    const rw = wAt((i + 1) / SEG);
+    const bx = new THREE.Mesh(new THREE.BoxGeometry(rw * 2, 0.12, 0.12), brC);
+    bx.position.set(0, y1, rw); g.add(bx);
+    const bz = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, rw * 2), brC);
+    bz.position.set(-rw, y1, 0); g.add(bz);
+    /* zigzag bracing: one diagonal on the front, one on the back, alternating direction */
+    const halfW = (wAt(i / SEG) + rw) / 2;
+    const dLen = Math.hypot(segH, halfW * 2);
+    const dAng = Math.atan2(halfW * 2, segH) * (i % 2 ? 1 : -1);
+    for(const s of [[1, 0.75], [-1, -0.75]]){
+      const d = new THREE.Mesh(new THREE.BoxGeometry(0.11, dLen, 0.11), brC);
+      d.position.set(0, (y0 + y1) / 2, rw * s[1] * 0.85);
+      d.rotation.z = dAng * s[0]; g.add(d);
+    }
   }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.5, 6, 0.5), steel);
-  top.position.set(X + 1.8, gy + 42, Z); top.rotation.z = 0.045; scene.add(top);
+  /* crossarm + insulators + cap */
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.3, 0.3), brC);
+  arm.position.set(0, H - 3.2, 0); arm.castShadow = true; g.add(arm);
+  for(const s of [[-1],[1]]){
+    const ins = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.7, 0.34), lamber(0x3f3a36));
+    ins.position.set(3.4 * s[0], H - 3.7, 0); g.add(ins);
+  }
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.2, 0.7), lamber(0x6e4f40));
+  cap.position.set(0, H + 0.5, 0); cap.castShadow = true; g.add(cap);
+  /* guy wires — three, anchored clear of the base, so the lean reads intentional.
+     Drawn in world space from the tilted top so they meet the tower. */
+  const guyMat = new THREE.LineBasicMaterial({ color: 0x4a3a32, transparent: true, opacity: 0.55 });
+  const topOff = Math.sin(0.045) * (H - 8);
+  const guys = [[11, 5], [-10, 7], [2, -12]];
+  for(const [ax, az] of guys){
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(X + topOff, gy + H - 8, Z),
+      new THREE.Vector3(X + ax, gy + 0.25, Z + az),
+    ]);
+    scene.add(new THREE.Line(geo, guyMat));
+  }
 }
 
 /* ---------- old farm (barn + leaning silo) ---------- */
@@ -57031,6 +57100,75 @@ const windmill = { hub: null };
 }
 
 /* ============================================================
+   TOPPLED WIND TURBINE — a modern power generator that fell
+   (east ridge, with the standing turbine + windmill). Same white
+   tapered mast + box hub + three blades as the standing one at
+   (150,-110), but broken: the mast lies across the grass, snapped
+   near the base, the hub and blades torn off and askew.
+   ============================================================ */
+{
+  const X = 165, Z = -150, gy = groundH(X, Z);
+  const g = new THREE.Group();
+  g.position.set(X, gy, Z);
+  g.rotation.y = 2.4;                     /* lie it at an angle to the view */
+  scene.add(g);
+  const steel = lamber(0x8f959c);
+  const mastW = lamber(0xb8bcc2);
+  const hubM = lamber(0x9aa0a8);
+  const B = (a,b,c) => new THREE.BoxGeometry(a,b,c);
+  const add = (mesh, x,y,z, rx=0,ry=0,rz=0) => { mesh.position.set(x,y,z); mesh.rotation.set(rx,ry,rz); mesh.castShadow = true; g.add(mesh); return mesh; };
+
+  /* impact crater + scattered concrete at the base */
+  add(new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.4, 0.5, 12), lamber(0x5a554a)), 0, 0.1, 0);
+  for (let i = 0; i < 7; i++){
+    const r = 0.4 + hash(9100 + i, 5) * 0.7;
+    add(new THREE.Mesh(B(r*1.4, r, r*1.2), lamber(concColor(9100+i, 0.16))),
+      (hash(9100+i,6)-0.5)*7, 0.2 + r*0.2, (hash(9100+i,7)-0.5)*7, hash(9100+i,8)*0.6, hash(9100+i,9)*3, hash(9100+i,10)*0.6);
+  }
+
+  /* broken stump still standing — the snapped base of the mast */
+  add(new THREE.Mesh(B(1.6, 3.0, 1.6), mastW), 2.6, 1.5, 0, 0, 0, 0.04);
+  /* jagged break edge on the stump */
+  add(new THREE.Mesh(B(1.9, 0.6, 1.9), steel), 2.6, 2.9, 0, 0.1, 0, 0.12);
+
+  /* the fallen mast — tapered, lying along the ground, slight sag */
+  const segs = 5, segL = 5.0;
+  for (let i = 0; i < segs; i++){
+    const t = i / (segs - 1);
+    const w = 1.6 - t * 0.9;
+    const seg = add(new THREE.Mesh(B(segL, w, w), mastW),   /* long axis on X to lie along the ground */
+      -1.4 - i*segL, 1.1 + i*0.18, 0.2 + i*0.06);
+    seg.rotation.z = 0.05 + i*0.03;      /* sags toward the broken tip */
+  }
+  /* the last, thinnest segment is snapped off and slightly separate */
+  add(new THREE.Mesh(B(2.4, 0.55, 0.55), mastW), -27, 1.9, 0.6, 0.22, 0, 0.1);
+
+  /* the hub, torn off and lying askew at the fallen tip */
+  const hubG = new THREE.Group();
+  const hb = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4), hubM);
+  hb.castShadow = true; hubG.add(hb);
+  /* three blades still attached to the fallen hub */
+  for (let i = 0; i < 3; i++){
+    const len = i === 2 ? 2.2 : 4.6;
+    const bg = new THREE.BoxGeometry(0.3, len*2, 0.8);
+    bg.translate(0, len, 0);
+    const b = new THREE.Mesh(bg, steel);
+    const holder = new THREE.Group();
+    holder.rotation.z = i * (Math.PI*2/3) + 0.4;
+    holder.add(b);
+    hubG.add(holder);
+  }
+  hubG.position.set(-31, 2.0, 1.0);
+  hubG.rotation.set(0.2, 0.6, 1.4);
+  hubG.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  g.add(hubG);
+
+  /* a lone blade snapped off, lying flat in the grass further away */
+  const lone = add(new THREE.Mesh(B(0.3, 4.0, 0.8), steel), -36, 0.5, -2.4);
+  lone.rotation.set(0.1, 0.7, 1.65);
+}
+
+/* ============================================================
    LIGHTHOUSE — west lake shore, weathered, rotating beam at night
    ============================================================ */
 const lighthouse = { beamG: null, beamMat: null, light: null, lanternY: 0 };
@@ -57462,6 +57600,19 @@ function makeBus(x, y, z, ry, seed){
   for (let i=1;i<4;i++){                                              /* cross braces */
     const br = new THREE.Mesh(new THREE.BoxGeometry(8.5 - i*0.5, 0.3, 0.3), rustD);
     br.position.set(0, i*3.7, 0); g.add(br);
+  }
+  /* axle: the shaft the wheel spins on — runs between the two legs' tops, poking out both ends */
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.6, 10), dark);
+  axle.rotation.z = Math.PI/2; axle.position.set(0, 14.5, 0); axle.castShadow = true; g.add(axle);
+  /* bearing caps on the axle ends */
+  for (const s of [-1,1]){
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 0.5, 10), rustD);
+    cap.rotation.z = Math.PI/2; cap.position.set(s*1.9, 14.5, 0); cap.castShadow = true; g.add(cap);
+  }
+  /* support struts: from each A-frame leg up to the axle, so the wheel reads as held */
+  for (const s of [-1,1]){
+    const strut = new THREE.Mesh(new THREE.BoxGeometry(0.28, 5.4, 0.28), rustD);
+    strut.position.set(s*2.9, 12.2, 0); strut.rotation.z = s*0.62; strut.castShadow = true; g.add(strut);
   }
   const wheel = new THREE.Group();
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 1.3, 10), dark);
@@ -60184,6 +60335,43 @@ function updatePollinators(dt, dayF){
 const keys = {};
 addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
 addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+/* ---------- coordinate pinning: crosshair raycast + live readout ----------
+   Points at whatever is under the center crosshair and shows its world (x,z)
+   (plus y) in a HUD strip. Press C to copy "x,z" to the clipboard so the
+   user can paste a spot straight into a request. Toggle off with X. */
+const coordEl = document.getElementById('coords');
+const crossEl = document.getElementById('cross');
+const _cray = new THREE.Raycaster();
+const _cndc = new THREE.Vector2(0, 0);
+let coordsOn = true;
+function updateCoords(){
+  if (!coordEl) return;
+  if (!coordsOn){ coordEl.style.display = 'none'; crossEl.style.opacity = '0'; return; }
+  coordEl.style.display = 'block';
+  crossEl.style.opacity = '0.85';
+  _cray.setFromCamera(_cndc, camera);
+  const hits = _cray.intersectObjects(scene.children, true);
+  const h = hits.find(o => o.object.visible);
+  if (h){
+    const p = h.point;
+    const gh = groundH(p.x, p.z);
+    coordEl.innerHTML = `x: <b>${p.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${p.z.toFixed(0)}</b>&nbsp;&nbsp;y: <b>${p.y.toFixed(1)}</b>&nbsp;<span style="opacity:.6">(ground ${gh.toFixed(1)})</span>`;
+    window.__RC_POINT__ = { x: +p.x.toFixed(1), y: +p.y.toFixed(1), z: +p.z.toFixed(1) };
+  } else {
+    coordEl.innerHTML = `x: <b>${controls.target.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${controls.target.z.toFixed(0)}</b>`;
+    window.__RC_POINT__ = { x: +controls.target.x.toFixed(1), y: 0, z: +controls.target.z.toFixed(1) };
+  }
+}
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (k === 'c'){
+    const p = window.__RC_POINT__;
+    if (p && navigator.clipboard){ navigator.clipboard.writeText(`${p.x}, ${p.z}`); coordEl.innerHTML += '&nbsp;&nbsp;<span style="color:#2c7a3f">✓ copied</span>'; }
+  } else if (k === 'x'){
+    coordsOn = !coordsOn;
+  }
+});
 function updateNav(dt){
   const speed = 14;
   const fwd = new THREE.Vector3();
@@ -60385,6 +60573,7 @@ function animate(){
   stepFrame(dt);
   serpent.update(dt);
   updateUI(dt);
+  updateCoords();
   controls.update();
   renderer.render(scene, camera);
 }
