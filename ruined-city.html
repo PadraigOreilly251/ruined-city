@@ -68,7 +68,7 @@
   clearing stands a stone circle far older than the city. In the open water beyond the cove, at night, something enormous surfaces now and then. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
 </div>
-<div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes &middot; crosshair reads coordinates &middot; C copies them, X hides it</div>
+<div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes &middot; press <b>X</b> for the coordinate crosshair, <b>C</b> copies the spot</div>
 <div id="clock"></div>
 <div id="mute" title="toggle ambient sound">🔊</div>
 <div id="cross"></div>
@@ -60513,22 +60513,75 @@ const coordEl = document.getElementById('coords');
 const crossEl = document.getElementById('cross');
 const _cray = new THREE.Raycaster();
 const _cndc = new THREE.Vector2(0, 0);
-let coordsOn = true;
-function updateCoords(){
+/* OFF by default. The pick pass is opt-in now: it used to raycast all ~2500 meshes and
+   16581 instances every frame, which cost about as much as drawing the whole scene. */
+let coordsOn = false;
+
+/* The three full-map ground planes are 180k triangles each - raycasting them is what made
+   the HUD expensive. groundH() is analytic, so the spot under the crosshair is solved with
+   a few iterations instead, and that solved range also clamps the ray so only geometry in
+   front of the ground is ever tested. */
+function rayGroundPoint(ray){
+  const o = ray.origin, d = ray.direction;
+  if (d.y > -1e-4) return null;                  /* looking up at the sky */
+  let t = (o.y - groundH(o.x, o.z)) / -d.y;      /* first guess: our own column */
+  for (let i = 0; i < 8; i++){
+    const nt = (o.y - groundH(o.x + d.x * t, o.z + d.z * t)) / -d.y;
+    if (!isFinite(nt) || nt <= 0) return null;
+    const settled = Math.abs(nt - t) < 0.02;
+    t = nt;
+    if (settled) break;
+  }
+  if (!isFinite(t) || t <= 0 || t > 3000) return null;
+  const x = o.x + d.x * t, z = o.z + d.z * t;
+  return { t, x, z, y: groundH(x, z) };
+}
+
+let _pickList = null;
+function pickList(){
+  if (_pickList) return _pickList;
+  const out = [];
+  scene.traverse(o => {
+    if (!o.isMesh && !o.isInstancedMesh) return;                     /* stars, fireflies: Points */
+    if (o.geometry === groundGeo) return;                            /* 3 x 180k-tri ground planes */
+    if (o.geometry === cloudGeo) return;                             /* clouds */
+    if (o === rainMesh || o === snowMesh || o === leafMesh) return;  /* weather particles */
+    out.push(o);
+  });
+  _pickList = out;
+  return out;
+}
+const shown = o => { while (o){ if (!o.visible) return false; o = o.parent; } return true; };
+const _lastCamP = new THREE.Vector3(1e9, 0, 0);
+const _lastCamQ = new THREE.Quaternion();
+function updateCoords(force){
   if (!coordEl) return;
   if (!coordsOn){ coordEl.style.display = 'none'; crossEl.style.opacity = '0'; return; }
+  /* camera still means the readout cannot have changed - skip the whole pick */
+  if (!force && camera.position.distanceToSquared(_lastCamP) < 1e-7 &&
+      Math.abs(camera.quaternion.dot(_lastCamQ)) > 0.999998) return;
+  _lastCamP.copy(camera.position); _lastCamQ.copy(camera.quaternion);
   coordEl.style.display = 'block';
   crossEl.style.opacity = '0.85';
   _cray.setFromCamera(_cndc, camera);
-  const hits = _cray.intersectObjects(scene.children, true);
-  const h = hits.find(o => o.object.visible);
-  if (h){
-    const p = h.point;
-    const gh = groundH(p.x, p.z);
+  const gp = rayGroundPoint(_cray.ray);
+  _cray.far = gp ? Math.max(1.5, gp.t + 4) : 400;
+  const hits = _cray.intersectObjects(pickList(), false);
+  let obj = null;
+  for (const hh of hits){
+    if (!shown(hh.object)) continue;
+    if (gp && hh.distance > gp.t + 0.5) break;   /* behind the ground: nothing further counts */
+    obj = hh; break;
+  }
+  if (obj){
+    const p = obj.point, gh = groundH(p.x, p.z);
     coordEl.innerHTML = `x: <b>${p.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${p.z.toFixed(0)}</b>&nbsp;&nbsp;y: <b>${p.y.toFixed(1)}</b>&nbsp;<span style="opacity:.6">(ground ${gh.toFixed(1)})</span>`;
     window.__RC_POINT__ = { x: +p.x.toFixed(1), y: +p.y.toFixed(1), z: +p.z.toFixed(1) };
+  } else if (gp){
+    coordEl.innerHTML = `x: <b>${gp.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${gp.z.toFixed(0)}</b>&nbsp;&nbsp;y: <b>${gp.y.toFixed(1)}</b>&nbsp;<span style="opacity:.6">(ground ${gp.y.toFixed(1)})</span>`;
+    window.__RC_POINT__ = { x: +gp.x.toFixed(1), y: +gp.y.toFixed(1), z: +gp.z.toFixed(1) };
   } else {
-    coordEl.innerHTML = `x: <b>${controls.target.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${controls.target.z.toFixed(0)}</b>`;
+    coordEl.innerHTML = `x: <b>${controls.target.x.toFixed(0)}</b>&nbsp;&nbsp;z: <b>${controls.target.z.toFixed(0)}</b>&nbsp;<span style="opacity:.6">(sky)</span>`;
     window.__RC_POINT__ = { x: +controls.target.x.toFixed(1), y: 0, z: +controls.target.z.toFixed(1) };
   }
 }
@@ -60536,11 +60589,19 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'c'){
     const p = window.__RC_POINT__;
-    if (p && navigator.clipboard){ navigator.clipboard.writeText(`${p.x}, ${p.z}`); coordEl.innerHTML += '&nbsp;&nbsp;<span style="color:#2c7a3f">✓ copied</span>'; }
+    if (p && navigator.clipboard && coordsOn){ navigator.clipboard.writeText(`${p.x}, ${p.z}`); coordEl.innerHTML += '&nbsp;&nbsp;<span style="color:#2c7a3f">✓ copied</span>'; }
   } else if (k === 'x'){
     coordsOn = !coordsOn;
+    _pickList = null;                 /* rebuilt on next use in case weather swapped meshes */
+    if (coordsOn) updateCoords(true);
   }
 });
+window.__RC_COORDS__ = {
+  get on(){ return coordsOn; },
+  set on(v){ coordsOn = !!v; _pickList = null; if (coordsOn) updateCoords(true); },
+  pick(){ _pickList = null; updateCoords(true); return window.__RC_POINT__; },
+  pickCount(){ pickList(); return _pickList.length; },
+};
 function updateNav(dt){
   const speed = 14;
   const fwd = new THREE.Vector3();
