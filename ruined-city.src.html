@@ -2131,16 +2131,32 @@ columns(rubbleCells, lamber(0xffffff));   /* crane rubble added after the shared
   const steel = lamber(0x8f959c);
   const X = 150, Z = -110;
   const gy = groundH(X, Z);
-  const mast = new THREE.Mesh(new THREE.BoxGeometry(1.6, 30, 1.6), lamber(0xb8bcc2));
-  mast.position.set(X, gy + 15, Z); mast.rotation.z = 0.05; mast.castShadow = true; scene.add(mast);
-  const hub = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.6, 2.6), lamber(0x9aa0a8));
-  hub.position.set(X + Math.sin(0.05) * 30, gy + Math.cos(0.05) * 30, Z); hub.castShadow = true; scene.add(hub);
-  const hx = hub.position.x, hy = hub.position.y;
-  const blades = [[0.5, 1], [2.6, 1], [4.7, 0.6]];   /* third blade droops */
+  const lean = 0.05;
+  /* tapered mast: three stacked segments, narrower toward the top */
+  const mastSegs = [[1.6, 12, 0], [1.3, 11, 12], [1.0, 8, 23]];   /* [width, height, yOffset] */
+  for (const [w, h, yo] of mastSegs){
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), lamber(0xb8bcc2));
+    m.position.set(X + Math.sin(lean) * (yo + h/2), gy + (yo + h/2), Z);
+    m.rotation.z = lean; m.castShadow = true; scene.add(m);
+  }
+  const hy = gy + Math.cos(lean) * 30;   /* hub height */
+  const hx = X + Math.sin(lean) * 30;
+  /* nacelle — the box housing the generator, behind the hub */
+  const nac = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.0, 4.2), lamber(0x9aa0a8));
+  nac.position.set(hx, hy, Z - 1.0); nac.rotation.z = lean; nac.castShadow = true; scene.add(nac);
+  /* hub */
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.2, 10), lamber(0x9aa0a8));
+  hub.rotation.x = Math.PI/2; hub.position.set(hx, hy, Z + 1.2); hub.castShadow = true; scene.add(hub);
+  /* three blades, the third droops (bent) */
+  const blades = [[0.5, 1], [2.6, 1], [4.7, 0.6]];
   for(const [ang, len] of blades){
+    const bl = new THREE.Group();
+    bl.position.set(hx, hy, Z + 1.2);
     const b = new THREE.Mesh(new THREE.BoxGeometry(0.35, len * 14, 0.9), steel);
-    b.position.set(hx + Math.sin(ang) * len * 7, hy + Math.cos(ang) * len * 7, Z + 0.8);
-    b.rotation.z = ang - Math.PI / 2; b.castShadow = true; scene.add(b);
+    b.position.y = len * 7; b.castShadow = true;
+    bl.add(b);
+    bl.rotation.z = ang - Math.PI / 2;
+    scene.add(bl);
   }
 }
 
@@ -2205,6 +2221,26 @@ columns(rubbleCells, lamber(0xffffff));   /* crane rubble added after the shared
     ]);
     scene.add(new THREE.Line(geo, guyMat));
   }
+  /* a second, lower crossarm with a few insulators */
+  const arm2 = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.26, 0.26), brC);
+  arm2.position.set(0, H - 6.4, 0); arm2.castShadow = true; g.add(arm2);
+  for(const s of [[-1],[1]]){
+    const ins2 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 0.3), lamber(0x3f3a36));
+    ins2.position.set(2.7 * s[0], H - 6.8, 0); g.add(ins2);
+  }
+  /* a fallen guy-wire coil at the base — a snapped wire lying loose on the grass */
+  const coil = new THREE.Group();
+  const coilMat = lamber(0x4a3a32);
+  for (let i = 0; i < 5; i++){
+    const r = 0.4 + i * 0.22;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(r, 0.045, 6, 12), coilMat);
+    ring.rotation.x = Math.PI / 2 + 0.15;
+    ring.position.y = 0.06 + i * 0.05;
+    coil.add(ring);
+  }
+  coil.position.set(X + 4.5, gy + 0.1, Z + 4.2);
+  coil.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  scene.add(coil);
 }
 
 /* ---------- old farm (barn + leaning silo) ---------- */
@@ -2512,6 +2548,32 @@ const swings = [];   /* { g, phase, amp } — chains that swing in the wind */
   cells.push({ x: X + 3.5, z: Z + 1.5, y: gy, sy: 2.6, sx: 3, sz: 3, color: concColor(971, 0.2) });
   cells.push({ x: X + 3.5, z: Z + 1.5, y: gy + 2.6, sy: 0.3, sx: 3.2, sz: 3.2, color: concColor(972, 0.24) });
   columns(cells, lamber(0xffffff));
+  /* --- mesh detail: crossarm + antenna array + guy wires --- */
+  const steel = lamber(0x6a6a62), steelL = lamber(0x7a7a70);
+  const g = new THREE.Group();
+  g.position.set(X, gy, Z);
+  scene.add(g);
+  const add = (mesh, x,y,z, rx=0,ry=0,rz=0) => { mesh.position.set(x,y,z); mesh.rotation.set(rx,ry,rz); mesh.castShadow = true; g.add(mesh); return mesh; };
+  /* a second crossarm near the top, with a couple of vertical antenna stubs */
+  add(new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.28, 0.28), steel), 0, H - 3.6, 0);
+  for (const sx of [-2.2, 2.2]){
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.6, 0.18), steelL), sx, H - 2.3, 0);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.16), steel), sx, H - 3.0, 0);
+  }
+  /* the main antenna mast on the top platform */
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.24, 5.5, 0.24), steelL), 0, H + 2.9, 0);
+  /* guy wires — three, from near the top down to anchor blocks on the ground */
+  const guyMat = new THREE.LineBasicMaterial({ color: 0x4a4a42, transparent: true, opacity: 0.5 });
+  for (const [ax, az] of [[9, 5], [-9, 6], [2, -11]]){
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(X, gy + H - 2, Z),
+      new THREE.Vector3(X + ax, gy + 0.2, Z + az),
+    ]);
+    scene.add(new THREE.Line(geo, guyMat));
+    /* anchor block */
+    const ab = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.9), lamber(0x5a5a52));
+    ab.position.set(X + ax, gy + 0.35, Z + az); ab.castShadow = true; scene.add(ab);
+  }
 }
 
 /* ============================================================
@@ -2620,7 +2682,7 @@ function addLamp(x, z, seed, adx, adz){
 /* ============================================================
    WINDMILL — far NE ridge, one blade missing, still turning
    ============================================================ */
-const windmill = { hub: null };
+const windmill = { hub: null, cap: null };
 {
   const X = 155, Z = -130, gy = groundH(X, Z);
   const cells = [];
@@ -2629,6 +2691,23 @@ const windmill = { hub: null };
   cells.push({ x: X, z: Z, y: gy + 11, sy: 4, sx: 1.4, sz: 1.4, color: concColor(942, 0.28) });
   cells.push({ x: X, z: Z, y: gy + 15, sy: 1.0, sx: 2.0, sz: 2.0, color: 0x8a835f });   /* cap */
   columns(cells, lamber(0xffffff));
+  /* door + windows on the tower (mesh boxes on the front face, -z toward the city) */
+  const door = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.6, 0.2), lamber(0x3a2f24));
+  door.position.set(X, gy + 1.3, Z - 1.34); door.castShadow = true; scene.add(door);
+  for (const [wy, ww] of [[3.6, 0.9], [6.6, 0.8], [9.4, 0.7]]){
+    const win = new THREE.Mesh(new THREE.BoxGeometry(ww, ww, 0.16), lamber(0x2c3138));
+    win.position.set(X - 0.6, gy + wy, Z - 1.24); win.castShadow = true; scene.add(win);
+    const win2 = new THREE.Mesh(new THREE.BoxGeometry(ww, ww, 0.16), lamber(0x2c3138));
+    win2.position.set(X + 0.6, gy + wy, Z - 1.24); win2.castShadow = true; scene.add(win2);
+  }
+  /* gallery / balcony at the top of the tower (a ring you can stand on) */
+  const gallery = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.1, 0.25, 10), lamber(0x6f6a62));
+  gallery.position.set(X, gy + 15.15, Z); gallery.castShadow = true; scene.add(gallery);
+  /* the cap — a rotating head that carries the hub + blades, so it can face the wind */
+  const cap = new THREE.Group();
+  cap.position.set(X, gy + 15.6, Z);
+  scene.add(cap);
+  windmill.cap = cap;
   /* hub + 4 blades, the 4th a broken stub */
   const hub = new THREE.Group();
   const hubBox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), lamber(0x8a835f));
@@ -2645,9 +2724,12 @@ const windmill = { hub: null };
     holder.add(b);
     hub.add(holder);
   }
-  hub.position.set(X, gy + 15.6, Z);
-  scene.add(hub);
+  hub.position.set(0, 0, 1.15);   /* hub rides on the front of the cap */
+  cap.add(hub);
   windmill.hub = hub;
+  /* tail vane behind the cap, so it reads as a wind-facing head */
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.8, 2.6), lamber(0x6f6a62));
+  tail.position.set(0, 0.15, -2.2); tail.castShadow = true; cap.add(tail);
 }
 
 /* ============================================================
@@ -3140,6 +3222,7 @@ function makeBus(x, y, z, ry, seed){
 { const X = -94, Z = 8, gy = groundH(X, Z); makeBus(X, gy, Z, 0.35, 777); }
 
 /* ---------- rusted ferris wheel (NW field, a few seats left) ---------- */
+const ferris = { wheel: null, gonds: [], spin: 0 };
 {
   const X = -55, Z = -112, gy = groundH(X, Z);
   const rust = lamber(0x8a5a3c), rustD = lamber(0x6e4529), dark = lamber(0x4a3a2c);
@@ -3169,28 +3252,91 @@ function makeBus(x, y, z, ry, seed){
   const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 1.3, 10), dark);
   hub.rotation.x = Math.PI/2; hub.castShadow = true; wheel.add(hub);
   const R = 8;
+  const segLen = 2 * R * Math.sin(Math.PI / 16);   /* chord that closes the 16-gon */
+  const RIMT = 0.42, RIMZ = 0.95;                 /* rim thickness, half-separation of the two rings */
   for (let i=0;i<16;i++){                                             /* rim (two broken + sagged) */
     const a = i/16*Math.PI*2;
-    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 3.14), (i===5||i===6)?rustD:rust);
-    seg.position.set(Math.cos(a)*R, Math.sin(a)*R, 0); seg.rotation.z = a + Math.PI/2; seg.castShadow = true;
-    if (i===5||i===6) seg.position.y -= 0.6;                          /* the sagged span */
-    wheel.add(seg);
+    const broken = (i===5||i===6);
+    const mat = broken ? rustD : rust;
+    /* two parallel rim rings, like a real wheel; long axis on X, turned tangential
+       about Z — (cos(a+90), sin(a+90)) is perpendicular to the radius */
+    for (const zs of [-1, 1]){
+      const seg = new THREE.Mesh(new THREE.BoxGeometry(segLen, RIMT, RIMT), mat);
+      seg.rotation.z = a + Math.PI / 2;
+      seg.position.set(Math.cos(a)*R, Math.sin(a)*R, zs*RIMZ);
+      if (broken) seg.position.y -= 0.6;                          /* the sagged span */
+      seg.castShadow = true;
+      wheel.add(seg);
+    }
+    /* cross tie tying the two rim rings together */
+    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, RIMZ*2), rustD);
+    tie.position.set(Math.cos(a)*R, Math.sin(a)*R, 0);
+    if (broken) tie.position.y -= 0.6;
+    wheel.add(tie);
   }
-  for (let i=0;i<8;i++){                                              /* spokes */
+  for (let i=0;i<8;i++){                                              /* spokes, paired per rim plane */
     const a = i/8*Math.PI*2;
-    const sp = new THREE.Mesh(new THREE.BoxGeometry(0.16, R, 0.16), rustD);
-    sp.position.set(Math.cos(a)*R/2, Math.sin(a)*R/2, 0); sp.rotation.z = a - Math.PI/2; wheel.add(sp);
+    for (const zs of [-1, 1]){
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(0.22, R, 0.22), rustD);
+      sp.position.set(Math.cos(a)*R/2, Math.sin(a)*R/2, zs*RIMZ);
+      sp.rotation.z = a - Math.PI/2;
+      sp.castShadow = true;
+      wheel.add(sp);
+    }
   }
+  const missing = new Set([1,4,5,8,10,11]);   /* half the seats gone, irregular gaps */
+  const gonds = [];                            /* gondola pivots, kept upright in the update */
   for (let i=0;i<12;i++){                                             /* gondolas (a few missing) */
-    if (i%3===2) continue;
+    if (missing.has(i)) continue;
     const a = i/12*Math.PI*2;
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.1), dark);
-    arm.position.set(Math.cos(a)*R, Math.sin(a)*R - 0.4, 0); wheel.add(arm);
+    const pivot = new THREE.Group();                                    /* hangs off the rim */
+    pivot.position.set(Math.cos(a)*R, Math.sin(a)*R, 0);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.0, 0.22), dark);
+    arm.position.set(0, -0.5, 0); arm.castShadow = true; pivot.add(arm);
+    /* bracket clamping the seat across both rim rings */
+    const brk = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, RIMZ*2), rustD);
+    brk.position.set(0, -0.06, 0); brk.castShadow = true; pivot.add(brk);
     const gond = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.6, 0.95), lamber(0x7a6a4c));
-    gond.position.set(Math.cos(a)*R, Math.sin(a)*R - 0.95, 0); gond.castShadow = true; wheel.add(gond);
+    gond.position.set(0, -0.95, 0); gond.castShadow = true; pivot.add(gond);
+    wheel.add(pivot);
+    gonds.push(pivot);
   }
   wheel.position.set(0, 14.5, 0);
   g.add(wheel);
+  ferris.wheel = wheel; ferris.gonds = gonds;
+  /* gondolas that fell off over the years — tumbled on the grass under the wheel.
+     One still has its hanger arm bent; one is split open. */
+  const fellMat = lamber(0x6f6046), fellDark = lamber(0x4a3a2c);
+  {
+    const f1 = new THREE.Group();
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.6, 0.95), fellMat);
+    box.position.y = 0.32; f1.add(box);
+    const hanger = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.1), fellDark);
+    hanger.position.set(0.1, 0.85, 0); hanger.rotation.z = 0.9; f1.add(hanger);
+    f1.position.set(1.8, 0.02, 2.4); f1.rotation.set(0.1, 0.7, 1.35);
+    f1.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    g.add(f1);
+  }
+  {
+    const f2 = new THREE.Group();
+    /* split-open tub: four side walls, no floor, lying tilted */
+    const wA = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 0.08), fellMat);
+    wA.position.set(0, 0.28, 0.42); f2.add(wA);
+    const wB = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 0.08), fellMat);
+    wB.position.set(0, 0.28, -0.42); f2.add(wB);
+    const wC = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.9), fellMat);
+    wC.position.set(0.42, 0.28, 0); f2.add(wC);
+    const wD = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.55, 0.9), fellMat);
+    wD.position.set(-0.42, 0.28, 0); f2.add(wD);
+    f2.position.set(-3.2, 0.05, -1.6); f2.rotation.set(0.5, 2.1, 1.1);
+    f2.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    g.add(f2);
+  }
+  /* a loose hanger bracket + a couple of bolts/chain bits near the base */
+  for (const [bx, bz, br] of [[-1.4, 3.1, 0.6], [2.9, -2.2, 1.9], [0.4, -3.6, 2.7]]){
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.12), fellDark);
+    p.position.set(bx, 0.25, bz); p.rotation.set(0.4, br, 1.2); p.castShadow = true; g.add(p);
+  }
   g.position.set(X, gy, Z); g.rotation.y = 0.7; g.rotation.z = 0.06;
   scene.add(g);
 }
@@ -6039,8 +6185,18 @@ function stepFrame(dt){
     }
     p.needsUpdate = true;
   }
-  /* windmill: slow, steady turn */
+  /* windmill: the cap turns to face the wind; the hub spins slowly */
+  if (windmill.cap) windmill.cap.rotation.y += ((wx.wind > 0.2 ? 0.5 : -0.9) - windmill.cap.rotation.y) * (1 - Math.exp(-dt * 0.6));
   if (windmill.hub) windmill.hub.rotation.z += dt * 0.45;
+  /* ferris wheel: rusted, so it turns in fits — sticks, then slips round on a gust.
+     Gondolas counter-rotate so they always hang upright. */
+  if (ferris.wheel){
+    const drive = Math.max(0, wx.wind - 0.18) * 0.5;
+    const jam = Math.sin(tSim * 0.23) > -0.2 ? 1 : 0.06;   /* the bearing catches */
+    ferris.spin += (drive * jam - ferris.spin) * (1 - Math.exp(-dt * 1.1));
+    ferris.wheel.rotation.z += ferris.spin * dt;
+    for (const p of ferris.gonds) p.rotation.z = -ferris.wheel.rotation.z;
+  }
   /* tumbleweed: rolls down the z=0 avenue, bounces, wraps */
   {
     tw.x += dt * 5.5;
@@ -6142,6 +6298,8 @@ window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt no
 
 window.__RC_BOLT_MESH__ = bolt;   /* debug: inspect the bolt mesh */
 window.__RC_GROUND__ = groundH;   /* debug: terrain height sampler */
+window.__RC_FERRIS__ = ferris;   /* debug: ferris wheel spin + gondola pivots */
+window.__RC_WINDMILL__ = windmill;   /* debug: windmill cap + hub */
 window.__RC_SCENE__ = scene;      /* debug: scene + THREE for raycast probes */
 window.__RC_THREE__ = THREE;
 window.__RC_READY__ = true;
