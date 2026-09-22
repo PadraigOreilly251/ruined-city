@@ -106,9 +106,21 @@ const P_WX = HASH.has('wx') ? HASH.get('wx') : null;
 /* ---------- renderer / scene / camera ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+/* Resolution control. This scene is fill-rate bound, not draw-call bound
+   (~20 draw calls / ~200k tris), so pixels are essentially the whole cost:
+   pixel ratio 2 measured ~4.6fps against ~8.6fps at 1x. Cap the device ratio
+   and let a governor trade resolution for frame rate rather than trading away
+   scene content. */
+const DPR_CAP = 1.5;
+let renderScale = 1;
+function applyRenderScale(){
+  renderer.setPixelRatio(Math.min(devicePixelRatio, DPR_CAP) * renderScale);
+  renderer.setSize(innerWidth, innerHeight);
+}
+applyRenderScale();
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+if (typeof window !== 'undefined') window.__RC_RENDERER__ = renderer;   /* debug/profiling handle */
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -3760,9 +3772,52 @@ function treeRoof(x, z, baseY, h, seed){
 /* ---------- far hill ring: sits just past the map edge so the terrain cliff hides in the horizon ---------- */
 {
   const HILL_COLS = [0x8b9486, 0x939a8c, 0x838c7f, 0x9aa093, 0x86907f];
-  const cells = [];
-  for(let i = 0; i < 28; i++){
-    const a = (i / 28) * Math.PI * 2 + (hash(i, 51) - 0.5) * 0.3;
+
+  /* Tapered geometries. A plain box on the horizon reads as a giant cube:
+     flat lid, sharp corners, nothing overlapping it. Pull the top ring inward
+     (with jitter) so a cell reads as an eroded ridge instead. Four variants
+     keep neighbouring hills from looking like stamped copies. */
+  const hillGeos = [];
+  for (let v = 0; v < 4; v++){
+    const g = new THREE.BoxGeometry(1, 1, 1, 2, 1, 2);
+    g.translate(0, 0.5, 0);
+    const pos = g.attributes.position;
+    const taper = 0.42 + hash(v, 71) * 0.18;
+    const mid = 1 - (1 - taper) * 0.28;   /* sides bow out near the base */
+    for (let k = 0; k < pos.count; k++){
+      const x = pos.getX(k), y = pos.getY(k), z = pos.getZ(k);
+      if (y <= 0.4) continue;
+      const top = y > 0.9;
+      const f = (top ? taper : mid) + (hash(v * 31 + k, 72) - 0.5) * 0.08;
+      pos.setX(k, x * f);
+      pos.setZ(k, z * f);
+      if (top) pos.setY(k, y + (hash(v * 17 + k, 73) - 0.5) * 0.05);
+    }
+    g.computeVertexNormals();
+    hillGeos.push(g);
+  }
+  const byVariant = hillGeos.map(() => []);
+  /* Anchor every cell to the REAL ground beneath its whole footprint. These
+     cells used to start at a fixed y = -14 with a fixed height, so over ground
+     that swings 19..33 m the flat top cropped through the valleys at one
+     constant altitude — a 100 m box with a level lid, which is exactly the
+     "two giant cubes at the edge of the map" report. Sampling the footprint
+     means the hill rises out of the terrain wherever it touches it. */
+  const addHill = (x, z, w, d, rise, ry, ci) => {
+    let g = -1e9;
+    for (let a = -1; a <= 1; a++)
+      for (let b = -1; b <= 1; b++)
+        g = Math.max(g, groundH(x + a * w * 0.45, z + b * d * 0.45));
+    const base = g - 8;                       /* sunk: never a visible underside */
+    byVariant[ci % hillGeos.length].push({
+      x, z, y: base, sy: (g + rise) - base, sx: w, sz: d, ry,
+      color: HILL_COLS[Math.floor(hash(ci, 56) * HILL_COLS.length)],
+    });
+  };
+
+  const cells = 40;
+  for (let i = 0; i < cells; i++){
+    const a = (i / cells) * Math.PI * 2 + (hash(i, 51) - 0.5) * 0.25;
     const r = 330 + hash(i, 52) * 110;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
     /* the NE sector behind the sea cliffs belongs to the ancient grove +
@@ -3773,20 +3828,37 @@ function treeRoof(x, z, baseY, h, seed){
     const ww = waterHalfWidth(z);
     const rd = ww > 0.4 ? Math.abs(x - waterCenterX(z)) : 1e9;
     if (z > 330 || (ww > 0.4 && rd < ww + 40)) continue;
-    /* Beyond the map's square there is no terrain to hide the base (y = −14):
-       over the open sea and past the far rim those cells read as slabs
-       floating in the sky (NE corner cubes, NW/W slabs). The terrain edge
-       itself reads as a low far horizon, so only keep cells on real ground. */
+    /* Beyond the map's square there is no terrain to hide the base: over the
+       open sea and past the far rim those cells read as slabs floating in the
+       sky. The terrain edge itself reads as a low far horizon. */
     if (Math.max(Math.abs(x), Math.abs(z)) > 330) continue;
-    const w = 55 + hash(i, 53) * 60, d = 45 + hash(i, 54) * 45, hgt = 16 + hash(i, 55) * 28;
-    cells.push({ x, z, y: -14, sy: hgt, sx: w, sz: d, ry: hash(i, 57) * 3,
-      color: HILL_COLS[Math.floor(hash(i, 56) * HILL_COLS.length)] });
-    if (hash(i, 58) > 0.45)   /* second, lower tier on some peaks */
-      cells.push({ x: x + (hash(i,59) - 0.5) * w * 0.3, z: z + (hash(i,60) - 0.5) * d * 0.3,
-        y: hgt - 15, sy: hgt * (0.35 + hash(i,61) * 0.3), sx: w * 0.5, sz: d * 0.45,
-        ry: hash(i, 57) * 3, color: HILL_COLS[Math.floor(hash(i, 62) * HILL_COLS.length)] });
+    const w = 34 + hash(i, 53) * 34, d = 28 + hash(i, 54) * 30, rise = 14 + hash(i, 55) * 22;
+    const ry = hash(i, 57) * 3;
+    addHill(x, z, w, d, rise, ry, i);
+    /* Two staggered neighbours per peak. One lone box owns a stretch of skyline
+       and looks manufactured; three overlapping ones look like a range. */
+    addHill(x + (hash(i,59) - 0.5) * w * 1.1, z + (hash(i,60) - 0.5) * d * 1.1,
+      w * 0.7, d * 0.65, rise * (0.5 + hash(i,61) * 0.5), ry + 0.4, i + 1);
+    addHill(x - (hash(i,63) - 0.5) * w * 1.2, z - (hash(i,64) - 0.5) * d * 1.2,
+      w * 0.6, d * 0.7, rise * (0.4 + hash(i,65) * 0.5), ry - 0.5, i + 2);
   }
-  columns(cells, lamber(0xffffff));
+  hillGeos.forEach((geo, v) => {
+    const list = byVariant[v];
+    if (!list.length) return;
+    const mesh = new THREE.InstancedMesh(geo, lamber(0xffffff), list.length);
+    const m = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(),
+          q = new THREE.Quaternion(), e = new THREE.Euler();
+    list.forEach((c, k) => {
+      p.set(c.x, c.y, c.z); e.set(0, c.ry, 0); q.setFromEuler(e);
+      s.set(c.sx, c.sy, c.sz); m.compose(p, q, s); mesh.setMatrixAt(k, m);
+      mesh.setColorAt(k, tmpC.set(c.color));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    /* Far ring: never inside the shadow map, so casting is pure waste. */
+    mesh.castShadow = false; mesh.receiveShadow = true;
+    scene.add(mesh);
+  });
 }
 
 /* ---------- bushes + ferns (instanced, near roads and ruins) ---------- */
@@ -6355,10 +6427,24 @@ function stepFrame(dt){
   updatePollinators(dt, dayF);
 }
 
+/* Frame-rate governor: ease renderScale between 0.65 and 1 to hold a frame
+   budget. Hysteresis plus a cooldown keeps it from pumping up and down. */
+let govAvg = 16, govCool = 30;
+function govern(frameMs){
+  govAvg += (frameMs - govAvg) * 0.08;
+  if (govCool > 0) { govCool--; return; }
+  if (govAvg > 25 && renderScale > 0.65){
+    renderScale = Math.max(0.65, +(renderScale - 0.1).toFixed(2)); applyRenderScale(); govCool = 45;
+  } else if (govAvg < 14 && renderScale < 1){
+    renderScale = Math.min(1, +(renderScale + 0.05).toFixed(2)); applyRenderScale(); govCool = 90;
+  }
+}
+
 function animate(){
   requestAnimationFrame(animate);
   const now = performance.now();
-  const dt = Math.min(0.05, (now - lastT) / 1000);
+  const rawMs = now - lastT;
+  const dt = Math.min(0.05, rawMs / 1000);
   lastT = now;
   updateNav(dt);
   stepFrame(dt);
@@ -6367,6 +6453,7 @@ function animate(){
   updateCoords();
   controls.update();
   renderer.render(scene, camera);
+  govern(rawMs);
 }
 /* console debug hook — inspect sim state: __RC_DEBUG__() */
 window.__RC_DEBUG__ = () => ({ simDay: Math.floor(simDay), hour: +simHour.toFixed(2), season, seasonT: +seasonT.toFixed(2), wx: wxName, wxDwell: +(wxDwell >= 1e8 ? 1e9 : wxDwell).toFixed(1), snowfall: +snowMesh.material.opacity.toFixed(2), snowGround: +snowGroundMat.opacity.toFixed(2) });
@@ -6615,7 +6702,7 @@ if (SNAP){
 addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  applyRenderScale();
 });
 </script>
 </body>
