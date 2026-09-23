@@ -109,7 +109,10 @@ async function openPage(c, hash) {
   await c.send('Page.navigate', { url });
   let lastErr = '';
   await waitFor(() => evaluate(c, '!!(window.__RC_READY__ && window.__RC_GROUND__ && window.__RC_CAM__)')
-    .catch(e => { lastErr = e.message; return false; }), 45000, 400, 'page __RC_READY__' + (lastErr ? ' :: ' + lastErr : ''));
+    .catch(e => { lastErr = e.message; return false; }), 45000, 400,
+    /* if the page never comes up, the reason is almost always a JS exception at boot,
+       so print the exceptions we caught in the failure message */
+    () => 'page __RC_READY__' + (lastErr ? ' :: ' + lastErr : '') + ' :: ' + readErrors(c).slice(0, 3).join(' | '));
 }
 
 /* Collect console + exception events so "no errors" is a real claim, not a vibe. */

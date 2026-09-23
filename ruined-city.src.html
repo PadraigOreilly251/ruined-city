@@ -306,6 +306,35 @@ function columns(cells, material, noShadow){
 const RIVER_HW = 4.5;                       /* river half-width (m) */
 const WATER_Y  = -0.55;                     /* water surface height */
 const LAKE_CX = 114, LAKE_CZ = 245, LAKE_RX = 50, LAKE_RZ = 78;
+/* ---------- the tarn: a small kettle pond on the west lowland ----------
+   Between the spring meadow and the deer's winter yard, 26 m clear of the
+   city's north-west corner. Shallow (~2 m), fed by nothing and draining
+   nowhere — which is why it warms in summer, ices over in hard winter, and why
+   geese pick it. The shoreline wobbles by angle so it never reads as poured
+   concrete. One radius function drives the carved basin, the water ribbon and
+   the reed ring, so shore and water can never disagree. */
+const TARN = { x: -122, z: 52, r: 15, bank: 5.5 };
+function tarnRadius(a){
+  return TARN.r * (1 + 0.17 * Math.sin(a * 3 + 1.2) + 0.09 * Math.sin(a * 5 + 4.1) + 0.05 * Math.sin(a * 7 + 2.3));
+}
+/* signed distance from the waterline: > 0 in the water, < 0 on land */
+function tarnEdge(x, z){
+  const dx = x - TARN.x, dz = z - TARN.z;
+  return tarnRadius(Math.atan2(dz, dx)) - Math.hypot(dx, dz);
+}
+/* the water span of one scan row — returns intervals of offset from TARN.x.
+   Intervals, not a half-width: a wobbled shore is not symmetric. */
+function tarnWaterIntervals(z, step = 0.25){
+  const max = TARN.r * 1.8, out = [];
+  let start = null;
+  for (let d = -max; d <= max; d += step){
+    const inside = tarnEdge(TARN.x + d, z) > 0;
+    if (inside && start === null) start = d;
+    else if (!inside && start !== null){ out.push([start, d - step]); start = null; }
+  }
+  if (start !== null) out.push([start, max]);
+  return out;
+}
 const SEA_EDGE = 330;                      /* map south edge — the cove opens to the sea here */
 const SEA_W = 90;                          /* half-width of the cove mouth at the sea */
 const lerpN = (a, b, t) => a + (b - a) * t;
@@ -397,6 +426,19 @@ function groundH(x, z){
       return lerpN(h, WATER_Y + 0.05, t*t);
     }
   }
+  /* tarn: shallow kettle bowl with blended banks, carved from the same tarnEdge()
+     the water ribbon uses, so the shoreline can never drift out of step */
+  {
+    const td = tarnEdge(x, z);
+    if (td >= 0){
+      const t = clamp01(td / 9);                        /* 0 at shore → 1 at core */
+      return Math.min(h, WATER_Y - 0.18 - t * t * 1.45); /* max depth ~2.2 m */
+    }
+    if (td > -TARN.bank){
+      const t = clamp01(1 + td / TARN.bank);            /* 1 at shore → 0 on land */
+      return lerpN(h, WATER_Y + 0.05, t * t * 0.98);
+    }
+  }
   return h;
 }
 
@@ -440,8 +482,9 @@ let groundGeo = null;
     const inCity = Math.abs(x) < 96 && Math.abs(z) < 96;
     const ww = waterHalfWidth(z);
     const rd = ww > 0.4 ? Math.abs(x - waterCenterX(z)) : 1e9;
-    const inWater = rd < ww + 1.0;                    /* river/lake bed (under the water) */
-    const onBank  = !inWater && rd < ww + 4.5;        /* gravelly bank at the waterline */
+    const inTarn = tarnEdge(x, z) > 0;
+    const inWater = rd < ww + 1.0 || inTarn;                    /* river/lake bed + tarn (under the water) */
+    const onBank  = !inWater && (rd < ww + 4.5 || tarnEdge(x, z) > -4.5);   /* gravelly bank at the waterline */
     const onRoad = inCity && !inWater && (roadC(x) < 4.6 || roadC(z) < 4.6);
     const onBlock = inCity && !inWater && !onRoad;
     if (inWater) c.copy(EARTH_C).lerp(new THREE.Color('#2e3432'), 0.65);   /* muddy bed */
@@ -613,6 +656,21 @@ const waterMeshes = [];
 {
   const g = buildWaterMesh(waterRows);
   if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows: waterRows }); }
+}
+
+/* tarn water: the same ribbon machinery, one row per scan line taking the
+   widest wet interval, so the wobbled shore is followed exactly */
+{
+  const rows = [];
+  for (let z = TARN.z - TARN.r * 1.45; z <= TARN.z + TARN.r * 1.45; z += 0.75){
+    const iv = tarnWaterIntervals(z);
+    if (!iv.length) continue;
+    let best = iv[0];
+    for (const c of iv) if (c[1] - c[0] > best[1] - best[0]) best = c;
+    rows.push({ z, cx: TARN.x + (best[0] + best[1]) / 2, ww: (best[1] - best[0]) / 2 });
+  }
+  const g = buildWaterMesh(rows);
+  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
 }
 
 /* ---------- open sea beyond the cove mouth ---------- */
@@ -1212,7 +1270,8 @@ const CLEAR_ZONES = [
 ];
 CLEAR_ZONES.push(
   { x: -165, z: 255, r: 30 },   /* the watershed: reservoir + valve house + main */
-  { x: 4,    z: 256, r: 37 }    /* the listening array: an antenna field is cleared land */
+  { x: 4,    z: 256, r: 37 },   /* the listening array: an antenna field is cleared land */
+  { x: TARN.x, z: TARN.z, r: TARN.r + 6 }   /* the tarn: no trees rooted in the waterline */
 );
 const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
 
@@ -4537,6 +4596,33 @@ function updateSeasons(dt){
       cells.push({ x, z, y: g - 0.08, sy: s * 0.7, sx: s, sz: s * 0.8, ry: hash(i, 143) * 3, color: hash(i, 144) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
     }
   }
+  /* tarn shore ring — a small pond wants reeds and sedge round it, not lawn */
+  for (let i = 0; i < 190; i++){
+    const a = hash(i, 240) * 6.283;
+    /* rocks sit further up the bank than reeds do: on a low shore a stone at the
+       waterline, seen from a shallow angle, looks like it is floating on the pond */
+    const rr = tarnRadius(a), f = (hash(i, 242) > 0.87 ? 1.18 + hash(i, 245) * 0.34 : 1.01 + hash(i, 241) * 0.24);
+    const x = TARN.x + Math.cos(a) * rr * f, z = TARN.z + Math.sin(a) * rr * f;
+    const g = groundH(x, z);
+    if (g > 0.9 || g < WATER_Y + 0.1) continue;
+    const r = hash(i, 242);
+    if (r < 0.5){
+      const hgt = 0.8 + hash(i, 243) * 0.9;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 244) * 3, color: REED[i % 3] });
+    } else if (r < 0.7){
+      const hgt = 0.9 + hash(i, 243) * 0.7;
+      cells.push({ x, z, y: g, sy: hgt, sx: 0.05, sz: 0.05, ry: hash(i, 244) * 3, color: 0x5d7a3a });
+      cells.push({ x, z, y: g + hgt - 0.13, sy: 0.28, sx: 0.085, sz: 0.085, ry: hash(i, 244) * 3, color: 0x6a4a2e });
+    } else if (r < 0.92){
+      for (let b = 0; b < 3; b++){
+        const ox = (hash(i, 250 + b) - 0.5) * 0.55, oz = (hash(i, 253 + b) - 0.5) * 0.55;
+        cells.push({ x: x + ox, z: z + oz, y: groundH(x + ox, z + oz), sy: 0.28 + hash(i, 256 + b) * 0.3, sx: 0.05, sz: 0.05, ry: hash(i, 259 + b) * 3, color: REED[(i + b) % 3] });
+      }
+    } else {
+      const s = 0.3 + hash(i, 262) * 0.6;
+      cells.push({ x, z, y: g - 0.07, sy: s * 0.6, sx: s, sz: s * 0.8, ry: hash(i, 263) * 3, color: hash(i, 264) < 0.5 ? 0x7a7d72 : 0x6b6e64 });
+    }
+  }
   const shoreMesh = columns(cells, lamber(0xffffff), true);
   if (shoreMesh){ registerSeasonFoliage(shoreMesh, 'grass'); tintFoliageNow(shoreMesh, 'grass'); }   /* reeds tint with the seasons */
 }
@@ -5301,30 +5387,151 @@ function updateShootingStars(dt){
   }
 }
 
-/* ---------- snow footprints: deer + fox trails, visible when snow covers the ground ---------- */
+/* ---------- live tracks: the animals write their own routes ----------
+   Every purposeful footfall is stamped into one persistent pool, so the ground
+   keeps a record of where the wildlife actually went: the migration corridor
+   between the four ranges, the loop a spooked deer ran back home, the fox's
+   regulars along the avenue. Grazing is deliberately NOT recorded — a field
+   pitted with prints reads as panic, not pasture. */
+const TRACK_MAX = 9000;
+const TRACK_KINDS = { deer: 0, fox: 1, goose: 2 };
+const TRACK_SHAPE = [
+  { w: 0.10, l: 0.24, off: 0.19 },   /* deer: paired cloven print */
+  { w: 0.08, l: 0.11, off: 0.075 },  /* fox: narrow paw, near the centre line */
+  { w: 0.18, l: 0.28, off: 0.15 },   /* goose: big webbed splay */
+];
+const TRACK = { n: 0, head: 0, season: -1, mesh: null, mat: null, enabled: true, stamped: 0,
+  kind: new Uint8Array(TRACK_MAX) };
 {
-  const cells = [];
-  const addTrail = (pts, step, off, w, l, seedBase) => {
-    for (let i = 0; i < pts.length - 1; i++){
-      const ax = pts[i][0], az = pts[i][1], bx = pts[i+1][0], bz = pts[i+1][1];
-      const a0 = Math.atan2(bz - az, bx - ax);
-      const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / step));
-      for (let k = 0; k <= n; k++){
-        const t = k / n, x = ax + (bx - ax) * t, z = az + (bz - az) * t;
-        for (const sg of [-1, 1]){
-          const px = x + Math.cos(a0 + Math.PI/2) * off * sg + (hash(seedBase + i * 40 + k * 2 + sg, 77) - 0.5) * 0.2;
-          const pz = z + Math.sin(a0 + Math.PI/2) * off * sg;
-          cells.push({ x: px, z: pz, y: groundH(px, pz) - 0.01, sy: 0.035, sx: w, sz: l, ry: a0,
-            color: new THREE.Color(0x93a0ac).multiplyScalar(0.85 + hash(seedBase + i * 40 + k * 2 + sg, 78) * 0.3) });
+  const mat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.85, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -2 });
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, TRACK_MAX);
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.frustumCulled = false;                  /* the network spans a kilometre of map */
+  mesh.count = 0;                              /* grows as prints land */
+  mesh.renderOrder = 2;                        /* over the ground-snow overlay (renderOrder 1) */
+  scene.add(mesh);
+  TRACK.mesh = mesh; TRACK.mat = mat;
+}
+const _trO = new THREE.Object3D(), _trC = new THREE.Color();
+/* What a print looks like depends on what is underfoot: in snow a track is the
+   shadow left in the depression; on dry ground it is worn earth showing through. */
+function trackColor(k, out){
+  /* In snow a track is a shadow in the surface, so it stays close to white; on dry
+     ground it is earth worn through the turf, and much quieter. Both deliberately
+     low-contrast: at full strength the prints read as flagstones laid on the map. */
+  if (season === 3 || wx.snow > 0.35) out.setHex([0xc6d0da, 0xc0cad4, 0xcbd4dd][k]);
+  else if (season === 2) out.setHex([0x7a6746, 0x6f5c3e, 0x84714f][k]);
+  else if (season === 1) out.setHex([0x87744f, 0x7b6847, 0x8f7c57][k]);
+  else out.setHex([0x786a51, 0x6e6049, 0x817258][k]);
+  return out;
+}
+function stampPrint(x, z, ry, kind){
+  if (!TRACK.enabled) return;
+  const k = TRACK_KINDS[kind] || 0;
+  const sh = TRACK_SHAPE[k];
+  const gh = groundH(x, z);
+  if (gh < WATER_Y + 0.25) return;           /* nothing gets written into the water */
+  const i = TRACK.head;
+  TRACK.head = (TRACK.head + 1) % TRACK_MAX;
+  TRACK.n = Math.max(TRACK.n, i + 1);
+  TRACK.kind[i] = k;
+  _trO.position.set(x, gh + 0.006, z);
+  _trO.rotation.set(0, ry, 0);
+  _trO.scale.set(sh.w, 0.008, sh.l);
+  _trO.updateMatrix();
+  TRACK.mesh.setMatrixAt(i, _trO.matrix);
+  TRACK.mesh.setColorAt(i, trackColor(k, _trC));
+  TRACK.mesh.count = TRACK.n;
+  TRACK.mesh.instanceMatrix.needsUpdate = true;
+  if (TRACK.mesh.instanceColor) TRACK.mesh.instanceColor.needsUpdate = true;
+  TRACK.stamped++;
+}
+/* one stride = a pair of prints either side of the heading */
+function stampStep(x, z, dir, kind){
+  const sh = TRACK_SHAPE[TRACK_KINDS[kind] || 0];
+  /* No two prints identical: a trail with perfect symmetry reads as laid tile, not
+     as something that stepped here. Plus a little toe-out on each print. */
+  const jx = Math.round(x * 7), jz = Math.round(z * 7);
+  const j1 = (hash(jx, jz) - 0.5) * 0.22, j2 = (hash(jz, jx) - 0.5) * 0.22;
+  const sp = kind === 'deer' ? 0.10 : 0.05;
+  const px = Math.cos(dir) * sh.off, pz = -Math.sin(dir) * sh.off;
+  stampPrint(x + px, z + pz, dir + sp + j1, kind);
+  stampPrint(x - px, z - pz, dir - sp + j2, kind);
+}
+/* The pool holds a couple of years of walking. When the season turns, every print
+   still in it gets repainted, because a track in snow is not a track in dust. */
+function trackRecolourAll(){
+  for (let i = 0; i < TRACK.n; i++) TRACK.mesh.setColorAt(i, trackColor(TRACK.kind[i], _trC));
+  if (TRACK.mesh.instanceColor) TRACK.mesh.instanceColor.needsUpdate = true;
+  TRACK.season = trackSurf();
+}
+/* Worn corridors: a line pulled taut between the ranges. Relaxing it and pushing
+   it back out of the city, over and over, is how an animal path actually routes
+   itself — taut where it can, bent around what will not be crossed. */
+function primeCorridors(){
+  const order = [0, 1, 2, 3, 0];
+  for (let l = 0; l < 4; l++){
+    const A = HERD_RANGES[order[l]], Bn = HERD_RANGES[order[l + 1]];
+    const N = 90, pts = [];
+    const nx = -(Bn.z - A.z), nz = (Bn.x - A.x), nl = Math.hypot(nx, nz) || 1;
+    for (let i = 0; i <= N; i++){
+      const t = i / N;
+      const wob = Math.sin(t * 5.1 + hash(l, 300) * 6.28) * 5.5 + Math.sin(t * 11.3 + hash(l, 301) * 6.28) * 2.2;
+      pts.push({ x: A.x + (Bn.x - A.x) * t + nx / nl * wob, z: A.z + (Bn.z - A.z) * t + nz / nl * wob });
+    }
+    for (let k = 0; k < 6; k++){
+      const sm = pts.map((p, i) => (i === 0 || i === N) ? { x: p.x, z: p.z } :
+        { x: (pts[i - 1].x + 2 * p.x + pts[i + 1].x) / 4, z: (pts[i - 1].z + 2 * p.z + pts[i + 1].z) / 4 });
+      for (let i = 1; i < N; i++){
+        let x = sm[i].x, z = sm[i].z;
+        if (Math.abs(x) < 101 && Math.abs(z) < 101){    /* the city is not a crossing */
+          if (101 - Math.abs(x) < 101 - Math.abs(z)) x = (x < 0 ? -1 : 1) * 105;
+          else z = (z < 0 ? -1 : 1) * 105;
         }
+        pts[i].x = x; pts[i].z = z;
       }
     }
-  };
-  addTrail([[-124, 10], [-114, 18], [-104, 8], [-96, 20], [-89, 14]], 0.95, 0.24, 0.17, 0.3, 11000);   /* T3: deer stay in the meadow (their actual bounds) */
-  addTrail([[-44, 30], [-20, 22], [4, 14], [28, 8], [52, 4], [70, 2]], 0.55, 0.11, 0.1, 0.17, 22000);   /* fox, near the avenue */
-  const fpMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -1 });
-  const fp = columns(cells, fpMat, true);
-  if (fp){ fp.renderOrder = 1; snowMats.push(fpMat); snowMeshes.push(fp); }
+    for (let i = 0; i < N; i++){
+      const p = pts[i], q = pts[i + 1], d = Math.hypot(q.x - p.x, q.z - p.z) || 1;
+      const ry = Math.atan2(q.x - p.x, q.z - p.z);
+      const n = Math.max(1, Math.round(d / 0.85));
+      for (let k = 0; k < n; k++){
+        const t = (k + 0.5) / n, jr = (hash(i * 9 + k, 400) - 0.5) * 0.55;
+        stampPrint(p.x + (q.x - p.x) * t + (q.z - p.z) / d * jr, p.z + (q.z - p.z) * t - (q.x - p.x) / d * jr,
+          ry + (hash(i * 9 + k, 401) - 0.5) * 0.25, 'deer');
+      }
+    }
+  }
+}
+window.__RC_TRACKS__ = {
+  mesh: TRACK.mesh, kind: TRACK.kind, get count(){ return TRACK.n; },
+  get stamped(){ return TRACK.stamped; },
+  clear(){ TRACK.head = 0; TRACK.n = 0; TRACK.mesh.count = 0; TRACK.mesh.instanceMatrix.needsUpdate = true; },
+  stamp: (x, z, dir, kind) => stampStep(x, z, dir, kind),
+  prime: primeCorridors, recolour: trackRecolourAll,
+  set enabled(v){ TRACK.enabled = !!v; }, get enabled(){ return TRACK.enabled; },
+};
+function trackSurf(){ return (season === 3 || wx.snow > 0.35) ? 4 : season; }
+function trackSeasonTick(){ if (TRACK.season !== trackSurf()) trackRecolourAll(); }
+/* Per-animal stride bookkeeping: stamp a print pair every `stride` metres walked,
+   back-projected onto the step it came from, so a hitching frame cannot smear the
+   prints to the far side of the stride. */
+function trackWalk(a, kind, stride){
+  const p = a.g.position;
+  if (!kind || !TRACK.enabled){ a.tpx = undefined; a.tacc = 0; return; }
+  if (a.tpx === undefined){ a.tpx = p.x; a.tpz = p.z; a.tacc = 0; return; }
+  const dx = p.x - a.tpx, dz = p.z - a.tpz, d = Math.hypot(dx, dz);
+  a.tpx = p.x; a.tpz = p.z;
+  if (d < 1e-5) return;
+  let acc = (a.tacc || 0) + d, guard = 0;
+  const gap = Math.max(0.5, stride * 0.55);   /* prints closer than the stride, or the trail reads as scattered debris */
+  while (acc >= gap && guard++ < 10){
+    acc -= gap;
+    const t = 1 - acc / d;
+    stampStep(a.tpx + dx * t, a.tpz + dz * t, Math.atan2(dx, dz), kind);
+  }
+  a.tacc = acc;
 }
 
 /* ============================================================
@@ -5440,6 +5647,9 @@ window.__RC_HERD__ = {
     for (let e = 0; e < simSeconds; e += dt) updateDeer(dt, 0.6);
   },
 };
+/* The network is already worn in when you arrive — the corridors between the ranges
+   laid down at load, so the routes read before the herd ever moves on screen. */
+primeCorridors();
 
 /* shortest way round in angle space */
 function angTo(cur, want, t){
@@ -5540,6 +5750,7 @@ function herdTravel(dt, dayF){
 const _adults = [];
 function updateDeer(dt, dayF){
   const raining = wx.rain > 0.5, winter = season === 3, autumn = season === 2;
+  trackSeasonTick();          /* a track in snow is not a track in dust */
   herdTravel(dt, dayF);
   _adults.length = 0;
   for(const a of deerList) if (a.target === a) _adults.push(a);
@@ -5637,6 +5848,9 @@ function updateDeer(dt, dayF){
          edge simply keeps walking until it is back inside */
       if (rangePull(a).out) a.t = Math.max(a.t, 4);
     } else if (a.state !== 'flee') a.legs.forEach(l => { l.rotation.x *= 0.9; });
+    /* live tracks: purposeful movement only — the migration walk, or a spooked
+       deer going home. Nothing gets written while it grazes. */
+    trackWalk(a, (a.state === 'walk' || a.state === 'flee') ? 'deer' : null, a.state === 'flee' ? 2.6 : 1.7);
     /* hide at night; T5: winter deer run thin */
     setAnimalScale(a, dt, (dayF > 0.35 ? 1 : 0) * (winter ? 0.95 : 1));
     /* T6: eye-shine in the dim, when the wanderer is close */
@@ -5799,6 +6013,7 @@ function updateFox(dt, dayF){
       a.g.position.z += Math.cos(a.dir) * a.speed * dt;
       a.g.rotation.y = a.dir;
       a.g.rotation.x = Math.sin(step) * 0.06;
+      trackWalk(a, 'fox', 1.15);   /* the fox tracks its own regulars through town */
       const swing = Math.sin(step) * 0.7;
       a.legs.forEach((l, k) => { l.rotation.x = swing * (k % 2 ? 1 : -1); });
       a.tail.rotation.x = 0.2 + Math.sin(step * 0.5) * 0.2;
@@ -6394,6 +6609,244 @@ makeGull(100, 230, 28, 24, 10,  0.20, 4.1, 0.9);
 makeGull(0, 0, 0, 0, 0, 0, 0.8, 0.95, { x: seaStacks[1].x - 0.55, y: seaStacks[1].top, z: seaStacks[1].z - 0.4, ry: 0.7 });
 makeGull(0, 0, 0, 0, 0, 0, 2.9, 0.9,  { x: seaStacks[1].x + 0.5,  y: seaStacks[1].top, z: seaStacks[1].z + 0.5, ry: 2.4 });
 makeGull(0, 0, 0, 0, 0, 0, 5.1, 0.95, { x: seaStacks[0].x + 0.2,  y: seaStacks[0].top, z: seaStacks[0].z + 0.5, ry: 4.0 });
+/* ---------- geese: a flock with a home pond and a migration ----------
+   The greylag on the tarn are the season you can hear. Spring and summer they
+   live on the water and graze its shores; when autumn comes the flock lifts off
+   in a V and works south to the lake, which stays open when the shallow tarn
+   ices, and comes back in spring. Lift-off is timed to dawn or dusk and the trip
+   takes a while, so it plays out rather than snapping.
+   Each bird steers to a SLOT in the V, not to the flock centre — that is what
+   holds the wedge through a turn, and the per-bird lag is what makes the V
+   breathe instead of marching like a stencil. */
+const GOOSE_HOME = {
+  tarn: { x: TARN.x, z: TARN.z, r: 8 },
+  lake: { x: LAKE_CX - 16, z: LAKE_CZ - 46, r: 15 },   /* the lake's north-west bay */
+};
+const GOOSE = {
+  home: 'tarn',           /* where the flock belongs right now */
+  mode: 'float',          /* float | walk | takeoff | fly | land */
+  x: TARN.x, z: TARN.z,  /* flock anchor (on the water, or a graze spot on land) */
+  dir: 0, alt: 0, spd: 8.6,
+  tx: GOOSE_HOME.tarn.x, tz: GOOSE_HOME.tarn.z, tgtWater: true,
+  leg: '', timer: 14, honkT: 5, init: false,
+};
+const geese = [];
+const gooseHomeFor = (s) => (s <= 1 ? 'tarn' : 'lake');   /* spring/summer here, autumn/winter south */
+/* Slot k of the V: leader first, then alternating left and right, each rank
+   further back and further out. Slot 0 is the point of the formation. */
+function gooseSlot(k, fx, fz, dir){
+  if (k <= 0) return { x: fx, z: fz };
+  const side = (k % 2 === 0) ? 1 : -1, rank = Math.ceil(k / 2);
+  return { x: fx - Math.sin(dir) * (3.2 * rank) + Math.cos(dir) * (2.4 * rank) * side,
+           z: fz - Math.cos(dir) * (3.2 * rank) - Math.sin(dir) * (2.4 * rank) * side };
+}
+function makeGoose(k){
+  const s = 1.55;
+  const g = new THREE.Group();
+  const bodyC = lamber(0x8f959d), paleC = lamber(0xc6cacd), covC = lamber(0x767c85),
+        darkC = lamber(0x383d43), headC = lamber(0xa9aeb4), billC = lamber(0xcf7f47), legC = lamber(0xc9874c);
+  const body = new THREE.Mesh(B(0.34 * s, 0.2 * s, 0.62 * s), bodyC); body.castShadow = true; g.add(body);
+  const breast = new THREE.Mesh(B(0.3 * s, 0.13 * s, 0.2 * s), paleC); breast.position.set(0, -0.03 * s, 0.24 * s); g.add(breast);
+  /* long narrow wings, tapered root-to-tip like the gulls but with more span —
+     a goose wing has to look like it can hold 4 kg in the air for a day */
+  const mkWing = (side) => {
+    const geo = new THREE.BoxGeometry(0.9 * s, 0.022 * s, 0.3 * s);
+    geo.translate(side * 0.45 * s, 0, -0.03 * s);
+    const pa = geo.attributes.position;
+    for (let v = 0; v < pa.count; v++){
+      const t = Math.abs(pa.getX(v)) / (0.9 * s);
+      const f = 1 - 0.4 * t;
+      pa.setZ(v, (pa.getZ(v) + 0.02 * s) * f - 0.02 * s);
+      pa.setY(v, pa.getY(v) * (1 - 0.28 * t));
+    }
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const wl = new THREE.Mesh(mkWing(-1), covC); wl.castShadow = true; g.add(wl);
+  const wr = new THREE.Mesh(mkWing(1), covC); wr.castShadow = true; g.add(wr);
+  const tipL = new THREE.Mesh(B(0.26 * s, 0.016 * s, 0.17 * s), darkC); tipL.position.set(-0.75 * s, 0, -0.02 * s); wl.add(tipL);
+  const tipR = tipL.clone(); tipR.position.x = 0.75 * s; wr.add(tipR);
+  const tail = new THREE.Mesh(B(0.17 * s, 0.05 * s, 0.22 * s), darkC); tail.position.set(0, 0.03 * s, -0.37 * s); g.add(tail);
+  /* neck pivots at its base with head + bill parented to it, so a grazing dip
+     carries the whole head instead of the neck tipping over on its own */
+  const neck = new THREE.Mesh(B(0.1 * s, 0.28 * s, 0.1 * s), headC);
+  neck.geometry.translate(0, 0.14 * s, 0);
+  neck.position.set(0, 0.07 * s, 0.29 * s); neck.rotation.x = 0.3; neck.castShadow = true; g.add(neck);
+  const head = new THREE.Mesh(B(0.1 * s, 0.1 * s, 0.15 * s), headC); head.position.set(0, 0.3 * s, 0.05 * s); head.castShadow = true; neck.add(head);
+  const bill = new THREE.Mesh(B(0.045 * s, 0.045 * s, 0.13 * s), billC); bill.position.set(0, 0.275 * s, 0.17 * s); neck.add(bill);
+  const legs = new THREE.Group();
+  const legL = new THREE.Mesh(B(0.028 * s, 0.17 * s, 0.028 * s), legC); legL.position.set(-0.06 * s, -0.18 * s, 0.02 * s); legL.castShadow = true;
+  const legR = legL.clone(); legR.position.x = 0.06 * s;
+  legs.add(legL); legs.add(legR); g.add(legs);
+  scene.add(g);
+  const a = { g, wl, wr, tipL, tipR, neck, head, bill, legs, slot: k,
+    ph: Math.random() * 100, flapRate: 3.0 + Math.random() * 0.5, flapPh: Math.random() * 6.283,
+    off: { x: (Math.random() - 0.5) * 5.5, z: (Math.random() - 0.5) * 5.5 },   /* spread on the water */
+    lag: 0.55 + Math.random() * 0.6, bob: Math.random() * 6.283,
+    actionT: 3 + Math.random() * 8, dipping: false, honkAt: 0, honkVol: 0 };
+  geese.push(a);
+  ALWAYS_ANIMALS.push(a);
+  return a;
+}
+for (let k = 0; k < 9; k++) makeGoose(k);
+/* A shore spot that will hold geese: dry, not in the water, not inside a ruin. */
+function gooseGrazeSpot(cx, cz){
+  for (let i = 0; i < 16; i++){
+    const a = hash(i + Math.floor(tSim * 0.7), 911 + Math.floor(Math.random() * 9977)) * 6.283;
+    const rr = 9 + Math.random() * 12;
+    const x = cx + Math.cos(a) * rr, z = cz + Math.sin(a) * rr;
+    if (Math.abs(x) > 300 || Math.abs(z) > 320) continue;
+    if (groundH(x, z) > WATER_Y + 0.45 && !inClearZone(x, z)) return { x, z };
+  }
+  return { x: cx, z: cz };
+}
+function gooseTakeoff(){
+  const to = GOOSE.home === 'tarn' ? 'lake' : 'tarn';
+  const h = GOOSE_HOME[to];
+  GOOSE.leg = to === 'lake' ? 'south' : 'north';
+  GOOSE.tx = h.x; GOOSE.tz = h.z; GOOSE.tgtWater = true;
+  GOOSE.dir = Math.atan2(h.x - GOOSE.x, h.z - GOOSE.z);
+  GOOSE.mode = 'takeoff'; GOOSE.timer = 4.2;
+  GOOSE.arrived = to;
+}
+function updateGeese(dt, dayF){
+  /* A load in autumn must start in the south, not mid-migration on the tarn. */
+  if (!GOOSE.init){
+    GOOSE.init = true;
+    GOOSE.home = gooseHomeFor(season);
+    const h = GOOSE_HOME[GOOSE.home];
+    GOOSE.x = h.x; GOOSE.z = h.z; GOOSE.tx = h.x; GOOSE.tz = h.z;
+  }
+  const night = dayF < 0.13 || dayF > 0.9;
+  const want = gooseHomeFor(season);
+  /* The trip starts at dawn or dusk, and not in hard rain — the same courtesy
+     the deer are shown, and it puts the flight in good light. */
+  if (want !== GOOSE.home && GOOSE.mode === 'float' && dayF > 0.15 && dayF < 0.85 && wx.rain < 0.55) gooseTakeoff();
+
+  const flying = GOOSE.mode === 'fly' || GOOSE.mode === 'takeoff' || GOOSE.mode === 'land';
+  if (flying){
+    const wantDir = Math.atan2(GOOSE.tx - GOOSE.x, GOOSE.tz - GOOSE.z);
+    GOOSE.dir = angTo(GOOSE.dir, wantDir, 1 - Math.exp(-dt * 0.7));
+    const sp = GOOSE.spd * (GOOSE.mode === 'takeoff' ? 0.7 : GOOSE.mode === 'land' ? 0.82 : 1);
+    GOOSE.x += Math.sin(GOOSE.dir) * sp * dt;
+    GOOSE.z += Math.cos(GOOSE.dir) * sp * dt;
+    const dist = Math.hypot(GOOSE.tx - GOOSE.x, GOOSE.tz - GOOSE.z);
+    if (GOOSE.mode === 'takeoff'){
+      GOOSE.alt += (32 - GOOSE.alt) * (1 - Math.exp(-dt * 0.5));
+      GOOSE.timer -= dt;
+      if (GOOSE.timer <= 0) GOOSE.mode = 'fly';
+    } else if (GOOSE.mode === 'fly'){
+      GOOSE.alt = 32 + Math.sin(tSim * 0.12) * 3.5;   /* settled wave, not a straight line */
+      if (dist < 30){ GOOSE.mode = 'land'; GOOSE.timer = 6; }
+    } else {
+      GOOSE.alt += (0.12 - GOOSE.alt) * (1 - Math.exp(-dt * 0.45));
+      GOOSE.timer -= dt;
+      if (GOOSE.timer <= 0 || dist < 5){
+        GOOSE.home = GOOSE.arrived; GOOSE.mode = 'float'; GOOSE.timer = 25;
+        GOOSE.x = GOOSE.tx; GOOSE.z = GOOSE.tz; GOOSE.alt = 0;
+      }
+    }
+    for (const a of geese){
+      const sl = gooseSlot(a.slot, GOOSE.x, GOOSE.z, GOOSE.dir);
+      const k = 1 - Math.exp(-dt * 2.4 * a.lag);
+      a.g.position.x += (sl.x - a.g.position.x) * k;
+      a.g.position.z += (sl.z - a.g.position.z) * k;
+      /* each rank sits a touch higher than the one ahead — that is what the V is
+         FOR, and it reads even from the ground */
+      a.g.position.y = WATER_Y + GOOSE.alt + Math.sin(tSim * 0.6 + a.bob) * 0.7 + (a.slot > 0 ? Math.ceil(a.slot / 2) * 0.4 : 0);
+      orientBird(a, dt, 0.85, 0.5);
+      a.flapPh += dt * a.flapRate * 6.283;
+      const w = Math.sin(a.flapPh);
+      wingPose(a.wl, a.wr, (w >= 0 ? w : w * 0.45) * 0.95, 0.05, a.tipL, a.tipR);   /* snap down, ease up */
+      a.legs.visible = false;
+      a.neck.rotation.x = 0.3 + (GOOSE.mode === 'land' ? 0.5 : 0);
+      a.head.rotation.x = 0;
+    }
+    /* The sound of a passing flock is a conversation, not a chorus: the lead
+       calls, two answer a beat later. */
+    GOOSE.honkT -= dt;
+    if (GOOSE.honkT <= 0){
+      GOOSE.honkT = 4 + Math.random() * 7;
+      const d = camera.position.distanceTo(geese[0].g.position);
+      const vol = clamp01(1 - d / 300) * 0.3;
+      if (vol > 0.004){ gooseHonk(vol); geese[0].g.userData.calling = true; }
+      for (let i = 0; i < 2; i++){
+        const b = geese[1 + ((Math.random() * (geese.length - 1)) | 0)];
+        b.honkAt = tSim + 0.22 + Math.random() * 0.55; b.honkVol = vol * (0.45 + Math.random() * 0.5);
+      }
+    }
+    return;
+  }
+
+  /* ---- on the water: drift, dip, preen; the flock repositions every so often ---- */
+  GOOSE.timer -= dt;
+  if (GOOSE.timer <= 0){
+    const h = GOOSE_HOME[GOOSE.home];
+    if (!night && Math.random() < 0.5 && GOOSE.mode === 'float'){
+      const sp = gooseGrazeSpot(h.x, h.z);
+      if (groundH(sp.x, sp.z) > WATER_Y + 0.45){ GOOSE.mode = 'walk'; GOOSE.x = sp.x; GOOSE.z = sp.z; GOOSE.tgtWater = false; GOOSE.timer = 30 + Math.random() * 40; }
+      else { GOOSE.x = h.x + (Math.random() - 0.5) * h.r * 2; GOOSE.z = h.z + (Math.random() - 0.5) * h.r * 2; GOOSE.timer = 20 + Math.random() * 25; }
+    } else {
+      GOOSE.x = h.x + (Math.random() - 0.5) * h.r * 2; GOOSE.z = h.z + (Math.random() - 0.5) * h.r * 2;
+      if (groundH(GOOSE.x, GOOSE.z) <= WATER_Y + 0.45 && GOOSE.mode === 'walk'){ GOOSE.mode = 'float'; }
+      GOOSE.timer = 20 + Math.random() * 25;
+    }
+  }
+  const onLand = GOOSE.mode === 'walk';
+  const wade = !onLand;
+  for (const a of geese){
+    const tx = GOOSE.x + a.off.x * (onLand ? 1.4 : 1), tz = GOOSE.z + a.off.z * (onLand ? 1.4 : 1);
+    const k = 1 - Math.exp(-dt * (onLand ? 0.75 : 0.5));
+    const px = a.g.position.x, pz = a.g.position.z;
+    a.g.position.x += (tx - px) * k;
+    a.g.position.z += (tz - pz) * k;
+    const gh = groundH(a.g.position.x, a.g.position.z);
+    if (onLand){
+      a.g.position.y = Math.max(gh, WATER_Y + 0.05) + 0.34 + Math.sin(tSim * 3.4 + a.bob) * 0.03;
+      a.legs.visible = true;
+      a.legs.rotation.x = Math.sin(tSim * 3.4 + a.bob) * 0.5;
+    } else {
+      a.g.position.y = WATER_Y + 0.11 + Math.sin(tSim * 1.1 + a.bob) * 0.035;
+      a.legs.visible = false;
+    }
+    trackWalk(a, onLand ? 'goose' : null, 2.4);   /* webbed prints where they walk */
+    const hd = Math.hypot(tx - px, tz - pz);
+    if (hd > 0.25) a.g.rotation.y = angTo(a.g.rotation.y, Math.atan2(tx - px, tz - pz), 1 - Math.exp(-dt * 2.5));
+    else if (GOOSE.mode === 'float') a.g.rotation.y += Math.sin(tSim * 0.21 + a.ph) * dt * 0.35;
+    /* head life: graze-dip, preen, or just watching the water */
+    a.actionT -= dt;
+    if (a.actionT < -1.6) a.actionT = 5 + Math.random() * 15;
+    const dipping = a.actionT < 0 && !night;
+    const target = dipping ? 1.45 : (night ? -0.25 : 0.3);
+    a.neck.rotation.x += (target - a.neck.rotation.x) * (1 - Math.exp(-dt * 3));
+    a.head.rotation.x = dipping ? 0.25 : 0;
+    a.head.rotation.y = night ? 0.9 : Math.sin(tSim * 0.5 + a.ph) * 0.5;   /* head tucked in to sleep */
+    /* on the water they sit folded with the odd shiver of the wings */
+    const shiver = Math.sin(tSim * 0.6 + a.ph) > 0.988 ? 0.45 : 0.1;
+    wingPose(a.wl, a.wr, shiver, 0.16, a.tipL, a.tipR);
+    if (a.honkAt && tSim >= a.honkAt){ a.honkAt = 0; gooseHonk(a.honkVol); }
+  }
+  /* pond geese are noisy at dawn — arrival, departure, who is where */
+  if (GOOSE.mode !== 'fly'){
+    for (const a of geese){
+      if (a.honkT === undefined) a.honkT = 6 + Math.random() * 40;
+      a.honkT -= dt;
+      if (a.honkT <= 0){
+        a.honkT = 9 + Math.random() * 30;
+        const d = camera.position.distanceTo(a.g.position);
+        const vol = clamp01(1 - d / 90) * 0.22;
+        if (vol > 0.004 && !night) gooseHonk(vol);
+      }
+    }
+  }
+}
+window.__RC_GEESE__ = {
+  st: GOOSE, homes: GOOSE_HOME, slots: gooseSlot, birds: geese,
+  setSeason(s){ season = s; },
+  depart(){ gooseTakeoff(); return { leg: GOOSE.leg, to: GOOSE.arrived }; },
+  fastForward(simSeconds, dt = 0.05){ for (let e = 0; e < simSeconds; e += dt) updateGeese(dt, 0.6); },
+};
+
 function updateGulls(dt, dayF){
   const active = dayF > 0.5 && wxName !== 'blizzard';
   for(const b of gulls){
@@ -6938,6 +7391,7 @@ function stepFrame(dt){
   updateCat(dt, dayF);
   updateBirds(dt, dayF);
   updateGulls(dt, dayF);
+  updateGeese(dt, dayF);
   updateBats(dt, dayF);
   updateFireflies(dt, dayF);
   updatePollinators(dt, dayF);
@@ -6985,6 +7439,7 @@ window.__RC_BOLT__ = () => { fireBolt(); };   /* debug: fire a lightning bolt no
 
 window.__RC_BOLT_MESH__ = bolt;   /* debug: inspect the bolt mesh */
 window.__RC_GROUND__ = groundH;   /* debug: terrain height sampler */
+window.__RC_TARN__ = { def: TARN, edge: tarnEdge, radius: tarnRadius, waterIntervals: tarnWaterIntervals };
 window.__RC_FERRIS__ = ferris;   /* debug: ferris wheel spin + gondola pivots */
 window.__RC_WINDMILL__ = windmill;   /* debug: windmill cap + hub */
 window.__RC_SCENE__ = scene;      /* debug: scene + THREE for raycast probes */
@@ -7095,6 +7550,27 @@ function thunder(delay){
 }
 /* T7 — proximity one-shots. Volume is caller-supplied (already distance-scaled).
    All reuse the birdChirp pattern: transient nodes -> master, zero assets. */
+function gooseHonk(vol){
+  if (!audio || muted || vol <= 0) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  const n = 2 + (Math.random() * 3 | 0);   /* ryuk-ryuk-ryuk */
+  let t = now;
+  for (let i = 0; i < n; i++){
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 1250 + Math.random() * 550; bp.Q.value = 3.4;   /* the nasal formant */
+    const g = ctx.createGain(); g.gain.value = 0.0001;
+    const f0 = 430 + Math.random() * 95, dur = 0.12 + Math.random() * 0.09;
+    o.frequency.setValueAtTime(f0 * 1.16, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.8, t + dur);         /* the downward rasp */
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.018);
+    g.gain.exponentialRampToValueAtTime(vol * 0.5, t + dur * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(bp); bp.connect(g); g.connect(audio.master);
+    o.start(t); o.stop(t + dur + 0.05);
+    t += dur + 0.07 + Math.random() * 0.07;
+  }
+}
 function crowCaw(vol){
   if (!audio || muted || vol <= 0) return;
   const ctx = audio.ctx, now = ctx.currentTime;

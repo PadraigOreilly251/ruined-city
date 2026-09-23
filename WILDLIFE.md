@@ -332,4 +332,118 @@ speed in a software-rendered page tells you nothing.
 - `tools/probes/migrate.js` — full-cycle migration proof
 - `tools/probes/deer_cost.js` — isolated per-frame cost
 - `tools/probes/warp_and_frame.js` — warp to a season (or mid-migration with `&to=`) and frame the live herd
+- `tools/probes/tarn_site.js` — ranked candidate basins for the pond (flatness, approach slope, distance from ruins)
+- `tools/probes/track_test.js` — prime / water / migration / recolour / cost for the live track pool
+- `tools/probes/track_census.js` — reads the instance buffers back and sorts prints by animal and region
+- `tools/probes/frame_track.js` — stands the camera in the trail, looking down the line
 
+
+## Batch 5 — water, and the record the animals leave
+
+The migration exposed two holes: the herd had nowhere to drink that was not the sea,
+and nothing on the ground remembered any of it.
+
+### The tarn (-122, 52)
+
+A shallow kettle pond on the west side, between the spring meadow and the city's
+north-west edge. The site was picked by `tools/probes/tarn_site.js`, which ranked
+candidate basins on flatness, approach slope, and distance from roads and ruins.
+
+- `TARN = { x: -122, z: 52, r: 15, bank: 5.5 }`
+- `tarnRadius(a)` wobbles the shore with three harmonics (±17 / ±9 / ±5 %) so it
+  never reads as a circle at a glance
+- `tarnEdge(x, z)` is the single signed distance used by **both** the terrain carve
+  and the water ribbon — the shoreline cannot drift out of step with the water
+- carve: bowl to ~2.2 m, banks blended over 5.5 m into natural ground
+- reeds and cattails at the margin; shore stones pushed up the bank, because a
+  stone sitting at the waterline and seen from a shallow angle looks like it is
+  floating on the pond
+
+### Geese that actually migrate
+
+`gooseHomeFor(s)` puts the flock at the tarn in spring and summer, and at the
+north-west bay of the southern lake in autumn and winter. `gooseSlot(k, ...)` lays
+out the V (leader first, then alternating ranks 3.2 m back and 2.4 m out).
+
+Measured, deterministic (`__RC_GEESE__.depart()` + `fastForward`):
+
+| Check | Result |
+|---|---|
+| Tarn → lake (autumn) | 32 s at 8.6 m/s, cruise 32 m |
+| Lake → tarn (spring) | 33 s |
+| Wedge, cross-axis | 2.4 / 4.8 / 7.2 / 9.6 m — exact |
+| Wedge, back axis | runs 1–3 m long through a turn, converges straight |
+
+The back axis stretching in a turn is what a real V does: the outside birds are
+covering more ground than the point.
+
+### Live tracks
+
+One `InstancedMesh`, 9000 prints, one draw call. The ground now keeps a record of
+where the wildlife actually went.
+
+- `stampPrint / stampStep(x, z, dir, kind)` — paired prints per stride; kinds:
+  deer `0.16×0.29`, fox `0.11×0.16`, goose `0.30×0.46`
+- `trackWalk(animal, kind, stride)` back-projects each pair onto the step actually
+  taken, so a hitching frame cannot smear the trail to the far side of the stride
+- **what gets written**: deer only in `walk`/`flee` (1.7 m migrating, 2.6 m
+  spooked), fox while trotting (1.15 m), geese only when on land (2.4 m).
+  Grazing never prints — a field pitted with prints reads as panic, not pasture
+- **nothing writes into water**: prints below `WATER_Y + 0.25` are dropped
+- `trackSurf()` = snow or one of three dry-season earths. When the surface changes
+  the whole live pool is repainted, because a track in snow is not a track in dust
+- `primeCorridors()` wears the network in before you arrive: a line between each
+  pair of seasonal ranges, relaxed six times and pushed out of the city on each
+  pass — the way a path mines the cheapest line and bends around what will not be
+  crossed
+- `renderOrder = 2`, above the ground-snow overlay at 1, or the snow paints the
+  tracks back out again; `depthWrite: false` + polygon offset so the prints sit on
+  the terrain instead of fighting it
+
+### Tuning (three passes, all driven by screenshots)
+
+The first version worked and looked wrong. What moved it:
+
+| | v1 | final | why |
+|---|---|---|---|
+| Deer print | `0.16×0.29` | `0.10×0.24` | at 16 cm wide the pair merged into one slab |
+| Pair offset | `0.22` | `0.19` | separated enough to read as two hooves |
+| Thickness | `0.030` | `0.008` | a 3 cm lip is what made them look like laid tile |
+| Spacing | 1.35 m | ~0.74 m | sparse prints read as scattered debris, not a trail |
+| Winter hue | `0x8b9aab` | `0xc6d0da` | high contrast against snow = objects, not depressions |
+| Rotation | exact | ±0.11 rad jitter | a perfectly symmetric trail never happens |
+
+Judged from standing height (`h=1.7`, 6 m behind the nearest print). Face-level
+framing (`h=1.3`, 2 m back) makes a 24 cm print fill a fifth of the frame and
+look like a paving slab — a probe artifact, not a scene bug.
+
+Pool: 9000 prints ≈ 10 minutes of continuous migration before the ring buffer
+starts overwriting the oldest prints. Long enough to follow a trail across the map;
+deliberately not permanent, or every session would end with the ground paved.
+
+| Check (`tools/probes/track_test.js`) | Result |
+|---|---|
+| Primed prints at load | 617 |
+| Prints under the waterline | 0 |
+| Live prints after 180 s of migration | 2610 |
+| Recolour on season change | brown → pale blue-grey, yes |
+| 60 s of herd sim, tracks off / on | 90.9 ms / 76.6 ms (delta inside noise) |
+| Deer prints inside the city | 3 — the tail of the winter corridor, i.e. the deer yard in the ruins' wind-shadow, as intended |
+
+### Bugs caught in Round 3
+
+1. **TDZ on `B`.** `const B = (a,b,c) => new THREE.BoxGeometry(...)` is declared at
+   line 5531; the track block at 5390 used `B(1,1,1)` and killed the page at boot
+   with `Cannot access 'B' before initialization`. Use the constructor directly in
+   code that lives above it.
+2. **The API object escaped its block.** `window.__RC_TRACKS__ = { mesh, ... }` sat
+   *outside* the `{}` that declares `mesh`, so a module-scope `mesh` shadow picked
+   up the wrong thing and the property came back `undefined`. `mesh: TRACK.mesh`
+   instead.
+3. **The harness could not say why the page was dead.** It waits on
+   `__RC_READY__` and reported only a timeout. `Runtime.exceptionThrown` was
+   already being collected — now the failure message includes it, which is how (1)
+   was found in one run instead of five.
+4. **The probe tried to set a module-scoped `let`.** `season = 3` in a CDP eval
+   writes a *global*, not the module binding, and silently does nothing. Use the
+   exposed `setSeason()`.
