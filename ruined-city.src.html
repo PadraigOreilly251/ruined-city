@@ -5385,7 +5385,7 @@ function makeDeer(x, z, scale, seed, graze){
   tail.position.set(0, 0.78*scale, -0.46*scale); g.add(tail);
   g.position.set(x, groundH(x, z), z);
   scene.add(g);
-  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, legPh: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 0, target: null, eyeM };
+  const a = { g, head, legs, seed, phase: hash(seed,1)*6.28, legPh: hash(seed,1)*6.28, state: 'graze', t: 1 + Math.random() * 3, dir: 0, speed: 1, wander: hash(seed, 3) * 6.28, target: null, eyeM };
   a.target = a;   /* herd: fawn follows first deer */
   deerList.push(a);
   DAY_ANIMALS.push(a);
@@ -5408,12 +5408,141 @@ const herd = [];
     f.target = parent;
   }
 }
+/* ---------- seasonal ranges: the herd owns a route, not a pen ----------
+   One home range per season (index === season), picked off the real map for the
+   reason a real herd picks one: spring calving cover in the west meadow, open
+   summer grazing by the old fairground, autumn mast in the oak pasture, and a
+   winter yard in the wind-shadow of the ruined city. The herd walks between them
+   at dawn and dusk, so a migration plays out over a couple of days instead of
+   teleporting the moment the season flips. */
+const HERD_RANGES = [
+  { name: 'the west meadow',      x: -115, z:   20, r: 30 },   /* spring: calving cover */
+  { name: 'the north fairground', x:  -38, z: -118, r: 36 },   /* summer: open grazing, ferris wheel */
+  { name: 'the oak pasture',      x: -150, z:  -20, r: 34 },   /* autumn: mast + browse */
+  { name: 'the city lee',         x:  -95, z:   55, r: 26 },   /* winter: deer yard, sheltered by the ruins */
+];
+const HERD = {
+  idx: 0, next: 0, moving: false,
+  cx: HERD_RANGES[0].x, cz: HERD_RANGES[0].z, r: HERD_RANGES[0].r,
+  rest: 12,          /* settle time at a range before agreeing to the next walk */
+  walked: 0,         /* metres the centre has covered, for the debug readout */
+  init: false,
+};
+window._herd = HERD;
+/* Debug/test hook. Headless sim time runs ~10x slow, so watching a migration at
+   wall speed is not a test. fastForward() drives the deer's own update loop at a
+   fixed dt so a whole seasonal walk can be proven in a second. */
+window.__RC_HERD__ = {
+  st: HERD,
+  ranges: HERD_RANGES,
+  setSeason(s){ season = s; },
+  fastForward(simSeconds, dt = 0.05){
+    for (let e = 0; e < simSeconds; e += dt) updateDeer(dt, 0.6);
+  },
+};
+
+/* shortest way round in angle space */
+function angTo(cur, want, t){
+  let d = want - cur;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return cur + d * clamp01(t);
+}
+/* Keep nudging a heading until the ground ahead is dry — stops a migrating herd
+   walking into the cove or off a shelf. */
+function dryDir(x, z, dir){
+  const step = 3.4;
+  for (const alt of [0, 0.55, -0.55, 1.1, -1.1, 1.7, -1.7, 2.4, -2.4]){
+    const d = dir + alt;
+    if (groundH(x + Math.sin(d) * step, z + Math.cos(d) * step) > WATER_Y + 0.5) return d;
+  }
+  return dir + Math.PI * 0.5;
+}
+/* Boids over the adults. Separation stops them standing inside one another, and
+   cohesion + alignment make the herd turn as one body — that is what sells a
+   herd on the move rather than N animals wandering near each other. */
+function herdFlock(a, mates){
+  const SEP = 2.7, NB = 13;
+  let sx = 0, sz = 0, cx = 0, cz = 0, hx = 0, hz = 0, n = 0;
+  for (const o of mates){
+    if (o === a) continue;
+    const dx = o.g.position.x - a.g.position.x, dz = o.g.position.z - a.g.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 0.05) continue;
+    if (d < SEP){ const k = (SEP - d) / SEP; sx -= dx / d * k; sz -= dz / d * k; }
+    if (d < NB){ cx += o.g.position.x; cz += o.g.position.z; hx += Math.sin(o.dir); hz += Math.cos(o.dir); n++; }
+  }
+  const v = { x: sx * 1.6, z: sz * 1.6 };
+  if (n){
+    v.x += (cx / n - a.g.position.x) * 0.035 + hx / n * 0.45;
+    v.z += (cz / n - a.g.position.z) * 0.035 + hz / n * 0.45;
+  }
+  return v;
+}
+/* How hard the home range pulls a deer back: nothing inside the soft core, ramping
+   outside it. `out` is the hard edge that turns a grazing deer into a walking one. */
+function rangePull(a){
+  const dx = HERD.cx - a.g.position.x, dz = HERD.cz - a.g.position.z;
+  const d = Math.hypot(dx, dz);
+  const soft = HERD.r * 0.7;
+  if (d <= soft) return { x: 0, z: 0, out: false, d };
+  const k = Math.min(1.5, (d - soft) / Math.max(1, HERD.r * 0.45));
+  return { x: dx / (d || 1) * k, z: dz / (d || 1) * k, out: d > HERD.r, d };
+}
+/* Where an adult wants to walk: flock over the herd, the pull of the range, and a
+   per-deer wander so it never runs on rails. */
+function herdDir(a, adults, dt){
+  a.wander += (Math.random() - 0.5) * dt * 3.2;
+  const f = herdFlock(a, adults), p = rangePull(a);
+  const vx = f.x + p.x + Math.sin(a.wander) * 0.34;
+  const vz = f.z + p.z + Math.cos(a.wander) * 0.34;
+  const want = Math.hypot(vx, vz) > 0.02 ? Math.atan2(vx, vz) : a.dir;
+  return dryDir(a.g.position.x, a.g.position.z, angTo(a.dir, want, 1 - Math.exp(-dt * 1.6)));
+}
+/* Advance the herd centre. Travels at dawn and dusk only and beds up otherwise,
+   which is what stretches the walk out over a day or two. */
+function herdTravel(dt, dayF){
+  if (!HERD.init){
+    HERD.init = true;
+    const r = HERD_RANGES[season];
+    /* The herd is built in the spring meadow. If we load straight into another
+       season the range is elsewhere, and with no season flip there is nothing to
+       pull them — they would stand in the wrong field forever. Move the whole
+       herd with its range, layout intact. */
+    const ox = r.x - HERD_RANGES[0].x, oz = r.z - HERD_RANGES[0].z;
+    if (ox || oz) for (const a of deerList){
+      a.g.position.x += ox; a.g.position.z += oz;
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z);
+    }
+    HERD.idx = season; HERD.next = season;
+    HERD.cx = r.x; HERD.cz = r.z; HERD.r = r.r; HERD.rest = 15;
+    return;
+  }
+  if (HERD.rest > 0) HERD.rest -= dt;
+  if (!HERD.moving){
+    if (season !== HERD.idx && HERD.rest <= 0){ HERD.moving = true; HERD.next = season; }
+    return;
+  }
+  if (dayF < 0.18 || dayF > 0.82 || wx.rain > 0.6) return;   /* bed up, do not travel */
+  const tgt = HERD_RANGES[HERD.next];
+  const dx = tgt.x - HERD.cx, dz = tgt.z - HERD.cz, d = Math.hypot(dx, dz);
+  const v = 0.62;
+  if (d <= v * dt * 2){
+    HERD.cx = tgt.x; HERD.cz = tgt.z; HERD.r = tgt.r;
+    HERD.walked += d;
+    HERD.idx = HERD.next; HERD.moving = false; HERD.rest = 45;
+    return;
+  }
+  const step = v * dt;
+  HERD.cx += dx / d * step; HERD.cz += dz / d * step; HERD.walked += step;
+  HERD.r = lerpN(HERD.r, tgt.r, 1 - Math.exp(-dt * 0.5));
+}
+const _adults = [];
 function updateDeer(dt, dayF){
   const raining = wx.rain > 0.5, winter = season === 3, autumn = season === 2;
-  /* herd centroid (adults) — cohesion */
-  let cx = 0, cz = 0, n = 0;
-  for(const a of deerList) if (a.target === a){ cx += a.g.position.x; cz += a.g.position.z; n++; }
-  if (n){ cx /= n; cz /= n; }
+  herdTravel(dt, dayF);
+  _adults.length = 0;
+  for(const a of deerList) if (a.target === a) _adults.push(a);
   for(let i = deerList.length - 1; i >= 0; i--){
     const a = deerList[i];
     a.t -= dt;
@@ -5443,25 +5572,34 @@ function updateDeer(dt, dayF){
         const dx = lead.g.position.x - a.g.position.x, dz = lead.g.position.z - a.g.position.z;
         if (Math.hypot(dx, dz) > 1.2) a.dir = Math.atan2(dx, dz);
       }
-      a.g.position.x += Math.sin(a.dir) * 4.5 * dt;
-      a.g.position.z += Math.cos(a.dir) * 4.5 * dt;
+      a.dir = dryDir(a.g.position.x, a.g.position.z, a.dir);   /* do not flee into the water */
+      const fx = a.g.position.x + Math.sin(a.dir) * 4.5 * dt;
+      const fz = a.g.position.z + Math.cos(a.dir) * 4.5 * dt;
+      if (groundH(fx, fz) > WATER_Y + 0.5){ a.g.position.x = fx; a.g.position.z = fz; }   /* never step into water */
+      else a.dir += 0.9;
       a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.06;
       a.g.rotation.y = a.dir;
       a.legPh += dt * 15;
       const swing = Math.sin(a.legPh) * 0.55;
       a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });   /* diagonal gait */
-      if (a.t <= 0 || pd > 25 || a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 3 + Math.random() * 3; }
+      if (a.t <= 0 || pd > 25){
+        /* a deer that spooked clear of the range does not stop out there — it walks home */
+        const back = rangePull(a).out;
+        a.state = back ? 'walk' : 'stand';
+        a.t = back ? 20 + Math.random() * 25 : 3 + Math.random() * 3;
+      }
     }
     if (a.t <= 0 && (a.state === 'graze' || a.state === 'stand')){
       const r = Math.random();
-      if (raining){ a.state = 'stand'; a.t = 2 + Math.random() * 4; }   /* T5: rain — ears up, no grazing */
+      if (HERD.moving && rangePull(a).out){ a.state = 'walk'; a.t = 8 + Math.random() * 8; a.speed = 1.0; }   /* migration: nobody stays bedded outside the range */
+      else if (raining){ a.state = 'stand'; a.t = 2 + Math.random() * 4; }   /* T5: rain — ears up, no grazing */
       else if (a.state === 'graze'){
         if (r < (winter ? 0.85 : 0.7)){ a.state = 'stand'; a.t = 2 + Math.random() * 5; }   /* T5: winter — graze less */
         else a.t = 3 + Math.random() * 6;
       } else {
         if (r < (autumn ? 0.85 : 0.5)){   /* T5: autumn — restless, walks more */
           a.state = 'walk'; a.t = 6 + Math.random() * 10; a.speed = 1.0;
-          if (adult && Math.random() < 0.5) a.dir = Math.atan2(cx - a.g.position.x, cz - a.g.position.z) + (Math.random() - 0.5) * 0.9;   /* T1: cohesion */
+          if (adult) a.dir = herdDir(a, _adults, dt);   /* flock + range pull + wander */
           else a.dir = Math.random() * 6.28;
         } else { a.state = 'graze'; a.t = 3 + Math.random() * 6; }
       }
@@ -5480,16 +5618,24 @@ function updateDeer(dt, dayF){
         const dx = lead.g.position.x - a.g.position.x, dz = lead.g.position.z - a.g.position.z;
         const dist = Math.hypot(dx, dz);
         if (dist > (lead.state === 'flee' ? 1.2 : 3)) a.dir = Math.atan2(dx, dz);
+      } else {
+        /* Adults steer every frame. Set the heading once at the start of a walk and
+           the deer holds that line forever — with the pen removed it never comes back. */
+        a.dir = herdDir(a, _adults, dt);
       }
-      a.g.position.x += Math.sin(a.dir) * a.speed * dt;
-      a.g.position.z += Math.cos(a.dir) * a.speed * dt;
+      const sp = a.speed * (HERD.moving ? 1.5 : 1);   /* the herd stretches its legs on a migration */
+      const nx = a.g.position.x + Math.sin(a.dir) * sp * dt;
+      const nz = a.g.position.z + Math.cos(a.dir) * sp * dt;
+      if (groundH(nx, nz) > WATER_Y + 0.5){ a.g.position.x = nx; a.g.position.z = nz; }   /* never step into water */
+      else a.dir += 0.9;
       a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.04;   /* body bob */
       a.g.rotation.y = a.dir;
-      a.legPh += dt * (1.5 + a.speed * 5.5);
+      a.legPh += dt * (1.5 + sp * 5.5);
       const swing = Math.sin(a.legPh) * 0.4;
       a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });   /* diagonal gait */
-      /* keep in the meadow */
-      if (a.g.position.x < -130 || a.g.position.x > -88 || Math.abs(a.g.position.z) > 60){ a.state = 'stand'; a.t = 2; }
+      /* no pen any more — the range keeps them home, and one that walked past the
+         edge simply keeps walking until it is back inside */
+      if (rangePull(a).out) a.t = Math.max(a.t, 4);
     } else if (a.state !== 'flee') a.legs.forEach(l => { l.rotation.x *= 0.9; });
     /* hide at night; T5: winter deer run thin */
     setAnimalScale(a, dt, (dayF > 0.35 ? 1 : 0) * (winter ? 0.95 : 1));

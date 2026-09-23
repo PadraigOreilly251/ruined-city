@@ -232,3 +232,104 @@ Notes:
 - `__audio.energy` getter (small window) added for quick checks; the 343 ms tap is probe-side.
 - Mute (`#mute` / 🔊) and the autoplay gesture gate are inherited — the one-shots no-op when `!audio || muted`.
 - Verified-by-hearing: open `ruined-city.html` in a real browser, click once (unlocks audio), walk toward the meadow at dusk. Expected: crow caws from the sky, deer rustle when the herd bolts, three rabbit thumps when one bolts (louder if you watch the hunt).
+
+---
+
+# Round 2 — the herd has somewhere to be
+
+Operator ask: *"look into animals again — could we make their behavior more
+interesting/realistic? Migrating herds, even?"*
+
+The Round 1 deer were reactive but place-bound: hard-coded pen at `x[-130,-88]`,
+`|z| ≤ 60`, cohesion = steer at random toward the centroid. Reactive, not
+ecological. The change: **the herd owns a seasonal route, and the pen is gone.**
+
+## T8 — Seasonal migration
+
+One home range per season (`index === season`), each picked off the real map for
+the reason a real herd picks it. Coordinates verified against terrain, water and
+reserved lots, not guessed:
+
+| Season | Range | Centre | r | Why there |
+|---|---|---|---|---|
+| Spring | the west meadow | `(-115, 20)` | 30 | calving cover, current spawn, low ground, sightlines break early |
+| Summer | the north fairground | `(-38, -118)` | 36 | open grazing directly against the ferris wheel — the herd under the wheel |
+| Autumn | the oak pasture | `(-150, -20)` | 34 | mast + browse under scattered oaks |
+| Winter | the city lee | `(-95, 55)` | 26 | a **deer yard** in the wind-shadow of the ruins; flat, sheltered, feedline of rubble-adjacent grass |
+
+Winter-in-the-ruins is the payoff: it makes the old "deer graze the old fields"
+narrative literally true on the same tiles the city is ruined on, and it is a
+place you can walk up to and find them at.
+
+### Mechanism
+
+- **Crepuscular travel.** `herdTravel()` only advances the centre when `dayF` is
+  in 0.18–0.82 and `wx.rain < 0.6`. Otherwise the herd beds up and the walk
+  waits. That single gate is what makes a migration take a couple of days instead
+  of snapping when the season flips.
+- **Settle time.** `HERD.rest` (45 s on arrival, 15 s on load) blocks the next
+  departure, so the herd actually *lives* in a range rather than instantly
+  leaving it.
+- **Centre → animals.** `rangePull()` is zero inside 70% of the radius and ramps
+  outside it; `out` (past the hard edge) turns a bedded deer into a walking one,
+  and a deer that ends a flee outside the range walks home instead of stopping in
+  the open.
+- **On the move the herd lengthens its stride:** walk speed × 1.5 while
+  `HERD.moving`.
+- **Boids over the adults** (`herdFlock`): separation 2.7 u, neighbour radius
+  13 u, cohesion + alignment. This is what sells "a herd" rather than N animals
+  near each other. Fawns still follow their dam, and flee overrides everything.
+- **Water is a wall.** Every step is validated against `groundH` before it is
+  taken (`dryDir` for heading, explicit `> WATER_Y + 0.5` check on the move), so
+  neither migration nor a panic can walk a deer into the cove.
+
+Full annual circuit ≈ **440 m** of centre travel; the longest single leg (fairground
+→ oak pasture) is 158 m.
+
+## Verification
+
+Headless CDP (`tools/cdp.mjs`, raw WebSocket, no deps). Deterministic: `__RC_HERD__.fastForward()`
+drives `updateDeer` at a fixed `dt`, so a whole season walk runs in ~1 s.
+
+`tools/probes/migrate.js`, one full cycle, every range checked at +120/+320/+560 sim-s:
+
+| Check | Result |
+|---|---|
+| Reaches each of the 4 ranges | `idx` matches target every time: `(-83,-37) → (-38,-118)`, `(-94,-69) → (-150,-20)`, `(-106,40) → (-95,55)`, back to `(-115,20)` |
+| Herd stays together | max animal-to-centre distance **15–32 m** across the whole cycle, never exceeds the range radius |
+| `outside=` (animals past the hard edge) | **0** at every sample |
+| `wet=` (animals on submerged ground) | **0** at every sample |
+| Separation (min pair distance) | **2.77–3.93 m** — no animal standing inside another (Round 1 could overlap) |
+| Cost | `updateDeer` = **0.022 ms/frame** median (5 runs, 2000 frames each, 9 animals) = **0.13% of a 60 fps frame** |
+| Console | clean, no exceptions, on every shot and probe |
+
+## Bugs caught in Round 2
+
+All four of these were invisible without the fast-forward probe — watching at wall
+speed in a software-rendered page tells you nothing.
+
+1. **The test itself lied first.** Headless sim time runs ~10× slower than wall
+   clock, so the 15 s settle never elapsed and `moving` stayed false — it looked
+   like the feature was dead. Fixed by exposing `__RC_HERD__.fastForward(simSeconds, dt)`
+   and testing on the sim clock, not the wall clock.
+2. **Straight-line forever.** Direction was only computed at the *start* of a
+   walk (fine when a pen wall stopped them; with the pen removed the deer held the
+   line and reached **2.6 km** from home and kept going). Fixed: adults re-steer
+   every frame in the walk state.
+3. **Wet deer.** One animal finished the autumn leg standing under water —
+   `dryDir` chose headings but the position update never validated the step.
+   Fixed with a pre-move ground check that turns instead of stepping in.
+4. **Load straight into winter.** The herd is *built* in the spring meadow. Load
+   the page with `#day=3` and the range is the city lee, but there is no season
+   flip to pull anyone, so the whole herd stood in the wrong field. Caught only by
+   screenshotting the winter load (the probe's own init masked it). Fixed by
+   translating the herd with its range once at init, layout intact.
+
+## Files
+
+- `ruined-city.src.html` — `HERD_RANGES`, `HERD`, `angTo`, `dryDir`, `herdFlock`, `rangePull`, `herdDir`, `herdTravel`, `__RC_HERD__`
+- `tools/cdp.mjs` — CDP harness (`eval` / `shot`, setup + probe scripts)
+- `tools/probes/migrate.js` — full-cycle migration proof
+- `tools/probes/deer_cost.js` — isolated per-frame cost
+- `tools/probes/warp_and_frame.js` — warp to a season (or mid-migration with `&to=`) and frame the live herd
+
