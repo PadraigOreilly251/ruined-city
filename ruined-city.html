@@ -55109,17 +55109,89 @@ const waterMeshes = [];
 
 /* tarn water: the same ribbon machinery, one row per scan line taking the
    widest wet interval, so the wobbled shore is followed exactly */
+let tarnWaterMesh = null;
+const tarnRows = [];
 {
-  const rows = [];
   for (let z = TARN.z - TARN.r * 1.45; z <= TARN.z + TARN.r * 1.45; z += 0.75){
     const iv = tarnWaterIntervals(z);
     if (!iv.length) continue;
     let best = iv[0];
     for (const c of iv) if (c[1] - c[0] > best[1] - best[0]) best = c;
-    rows.push({ z, cx: TARN.x + (best[0] + best[1]) / 2, ww: (best[1] - best[0]) / 2 });
+    tarnRows.push({ z, cx: TARN.x + (best[0] + best[1]) / 2, ww: (best[1] - best[0]) / 2 });
   }
-  const g = buildWaterMesh(rows);
-  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m); waterMeshes.push({ geo: g, rows }); }
+  const g = buildWaterMesh(tarnRows);
+  if (g){ const m = new THREE.Mesh(g, waterMat); m.receiveShadow = true; scene.add(m);
+    const wm = { geo: g, rows: tarnRows, tarn: true }; waterMeshes.push(wm); tarnWaterMesh = m; }
+}
+
+/* The tarn in deep winter. When the world goes cold the water skins over: a solid
+   pale shelf rides just above the surface, and the stress of freezing cracks it into
+   plates. It is the same footprint as the open water, so it thaws back into it.
+   When it is locked over, the geese that summered here are long gone south — a
+   frozen, empty sheet is how their absence reads. */
+const tarnIceMat = new THREE.MeshLambertMaterial({ color: 0xc4d7e2, transparent: true,
+  opacity: 0, side: THREE.DoubleSide, fog: false });
+const tarnCrackMat = new THREE.MeshLambertMaterial({ color: 0x5f7c8b, transparent: true,
+  opacity: 0, fog: false, depthWrite: true });
+let tarnIce = null, tarnCracks = null;
+  let tarnFreeze = 0;   /* 0 open water .. 1 locked solid; set each frame from the cold */
+let freezeLock = -1;    /* >=0 pins the freeze level (screenshots/tests) */
+{
+  const g = buildWaterMesh(tarnRows);
+  if (g){
+    tarnIce = new THREE.Mesh(g, tarnIceMat);
+    tarnIce.name = '__tarnice__';
+    tarnIce.position.y = 0.05;          /* the ice lid sits proud of open water */
+    tarnIce.renderOrder = 2;
+    tarnIce.visible = false;
+    scene.add(tarnIce);
+  }
+  /* Freeze cracks: straight, kinked runs that spread out from the middle and branch
+     — water does not crack in curves, it snaps along stress lines into plates. */
+  const segs = [];
+  let lcg = 20250923 >>> 0;
+  const rr = () => { lcg = (lcg * 1103515245 + 12345) & 0x7fffffff; return lcg / 0x7fffffff; };
+  const NMAIN = 11;
+  for (let i = 0; i < NMAIN; i++){
+    let x = TARN.x + (rr() - 0.5) * TARN.r * 0.5;
+    let z = TARN.z + (rr() - 0.5) * TARN.r * 0.5;
+    let ang = rr() * Math.PI * 2;
+    let left = TARN.r * (1.1 + rr() * 0.7);
+    let guard = 0;
+    while (left > 1.2 && guard++ < 12){
+      const seg = Math.min(left, 2.6 + rr() * 5.5);
+      const nx = x + Math.cos(ang) * seg, nz = z + Math.sin(ang) * seg;
+      if (tarnEdge(nx, nz) <= 0.6) break;                    /* stop short of the bank */
+      segs.push({ mx: (x + nx) / 2, mz: (z + nz) / 2, ang, len: seg, w: 0.09 + rr() * 0.05 });
+      /* a branch throws off at a sharp angle some of the time */
+      if (rr() < 0.5 && tarnEdge(x + Math.cos(ang + 1.9) * 3, z + Math.sin(ang + 1.9) * 3) > 1.5){
+        const ba = ang + (rr() < 0.5 ? 1 : -1) * (1.4 + rr() * 0.9);
+        const bl = 1.6 + rr() * 3.4;
+        const bx = x + Math.cos(ba) * bl * 0.5, bz = z + Math.sin(ba) * bl * 0.5;
+        if (tarnEdge(bx, bz) > 0.6) segs.push({ mx: bx, mz: bz, ang: ba, len: bl, w: 0.06 + rr() * 0.04 });
+      }
+      x = nx; z = nz; left -= seg;
+      ang += (rr() - 0.5) * 1.15;                            /* the run kinks, it does not bend */
+    }
+  }
+  const crackGeo = new THREE.BoxGeometry(1, 0.02, 1);
+  tarnCracks = new THREE.InstancedMesh(crackGeo, tarnCrackMat, segs.length);
+  tarnCracks.name = '__tarncrack__';
+  tarnCracks.frustumCulled = false;
+  tarnCracks.renderOrder = 3;
+  tarnCracks.visible = false;
+  { const o = new THREE.Object3D();
+    segs.forEach((s, i) => {
+      o.position.set(s.mx, WATER_Y + 0.07, s.mz);
+      o.rotation.set(0, -s.ang, 0);
+      o.scale.set(s.w, 1, s.len);
+      o.updateMatrix(); tarnCracks.setMatrixAt(i, o.matrix);
+    }); }
+  tarnCracks.instanceMatrix.needsUpdate = true;
+  scene.add(tarnCracks);
+  window.__RC_TARNICE__ = { ice: tarnIce, cracks: tarnCracks, iceMat: tarnIceMat, crackMat: tarnCrackMat,
+    segs: segs.length,
+    get freeze(){ return tarnFreeze; }, set freeze(v){ freezeLock = v; tarnFreeze = v; } };
 }
 
 /* ---------- open sea beyond the cove mouth ---------- */
@@ -59393,6 +59465,18 @@ function updateDayNight(dt){
   litWinMat.opacity = nightF * 0.55;
   /* water follows the light */
   waterMat.color.set(0x4d707c).lerp(new THREE.Color(0x1a2430), nightF * 0.75);
+  /* Deep winter locks the tarn over. It sets in as winter takes hold and thaws again
+     in the spring thaw — the ramp follows the season, so no snap. */
+  {
+    const want = freezeLock >= 0 ? freezeLock : clamp01((seasonMix.winter - 0.22) / 0.55);
+    tarnFreeze += (want - tarnFreeze) * (1 - Math.exp(-dt * 0.35));
+    if (tarnIce){
+      tarnIce.visible = tarnFreeze > 0.02;
+      tarnIceMat.opacity = tarnFreeze * 0.9;
+      const cf = clamp01((tarnFreeze - 0.42) / 0.58);   /* cracks come as it truly sets */
+      if (tarnCracks){ tarnCracks.visible = cf > 0.02; tarnCrackMat.opacity = cf * 0.85; }
+    }
+  }
   /* snow accumulation on ground + roofs (plus a light winter dusting) */
   {
     const snowAmt = Math.max(wx.snow, seasonMix.winter * 0.18);
@@ -59730,6 +59814,9 @@ let snowMesh;
   scene.add(snowMesh);
 }
 function updateSnow(dt){
+  /* Keep the session's new-snowfall meter running even before the first flake is
+     drawn — it is what buries the tracks behind it. */
+  if (TRACK.enabled) FROST += dt * Math.max(0, wx.snow) * 0.05;
   snowMesh.visible = wx.snow > 0.02;
   if (!snowMesh.visible) return;
   snowMesh.material.opacity = Math.min(1, 0.92 * wx.snow);
@@ -59850,7 +59937,12 @@ const TRACK_SHAPE = [
   { w: 0.18, l: 0.28, off: 0.15 },   /* goose: big webbed splay */
 ];
 const TRACK = { n: 0, head: 0, season: -1, mesh: null, mat: null, enabled: true, stamped: 0,
-  kind: new Uint8Array(TRACK_MAX) };
+  kind: new Uint8Array(TRACK_MAX),
+  /* Every print remembers where and when it was made, so a fresh snowfall can
+     re-lay it buried: we recompose from these, not from a live reference. */
+  px: new Float32Array(TRACK_MAX), pz: new Float32Array(TRACK_MAX),
+  pry: new Float32Array(TRACK_MAX), py: new Float32Array(TRACK_MAX),
+  frost: new Float32Array(TRACK_MAX), gone: new Uint8Array(TRACK_MAX) };
 {
   const mat = new THREE.MeshLambertMaterial({ transparent: true, opacity: 0.85, depthWrite: false,
     polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -2 });
@@ -59875,6 +59967,44 @@ function trackColor(k, out){
   else out.setHex([0x786a51, 0x6e6049, 0x817258][k]);
   return out;
 }
+/* Trail decay: a track is only information for as long as the ground that holds it
+   stays put. When new snow falls it fills the prints from the edges inward, so an
+   old trail sinks out of sight and a crisp line crossing the fresh sheet means it
+   was made after the last fall. FROST is how much new snow has fallen this session;
+   every print remembers the level it was made at, and the gap is how deep it has
+   been buried since. */
+let FROST = 0;
+let DECAY_DEPTH = 1.0;   /* new-snow units that close a print over completely */
+const FRESH_SNOW = new THREE.Color(0xf1f4f7);
+function trackDecay(){
+  if (FROST <= 0) return;
+  let any = false;
+  for (let i = 0; i < TRACK.n; i++){
+    if (TRACK.gone[i]) continue;
+    const bd = FROST - TRACK.frost[i];        /* snow that fell after this print */
+    if (bd <= 0) continue;
+    const f = clamp01(bd / DECAY_DEPTH);
+    const sh = TRACK_SHAPE[TRACK.kind[i]];
+    const s = 1 - f * 0.72;                   /* the print draws shut as it fills */
+    _trO.position.set(TRACK.px[i], TRACK.py[i] + 0.006 + f * 0.035, TRACK.pz[i]);
+    _trO.rotation.set(0, TRACK.pry[i], 0);
+    if (f >= 1){
+      _trO.scale.set(0, 0, 0);
+      _trO.updateMatrix(); TRACK.mesh.setMatrixAt(i, _trO.matrix);
+      TRACK.gone[i] = 1;
+    } else {
+      _trO.scale.set(sh.w * s, 0.008 * s, sh.l * s);
+      _trO.updateMatrix(); TRACK.mesh.setMatrixAt(i, _trO.matrix);
+      trackColor(TRACK.kind[i], _trC); _trC.lerp(FRESH_SNOW, f);
+      TRACK.mesh.setColorAt(i, _trC);
+    }
+    any = true;
+  }
+  if (any){
+    TRACK.mesh.instanceMatrix.needsUpdate = true;
+    if (TRACK.mesh.instanceColor) TRACK.mesh.instanceColor.needsUpdate = true;
+  }
+}
 function stampPrint(x, z, ry, kind){
   if (!TRACK.enabled) return;
   const k = TRACK_KINDS[kind] || 0;
@@ -59885,6 +60015,8 @@ function stampPrint(x, z, ry, kind){
   TRACK.head = (TRACK.head + 1) % TRACK_MAX;
   TRACK.n = Math.max(TRACK.n, i + 1);
   TRACK.kind[i] = k;
+  TRACK.px[i] = x; TRACK.py[i] = gh; TRACK.pz[i] = z; TRACK.pry[i] = ry;
+  TRACK.frost[i] = FROST; TRACK.gone[i] = 0;
   _trO.position.set(x, gh + 0.006, z);
   _trO.rotation.set(0, ry, 0);
   _trO.scale.set(sh.w, 0.008, sh.l);
@@ -59911,7 +60043,10 @@ function stampStep(x, z, dir, kind){
 /* The pool holds a couple of years of walking. When the season turns, every print
    still in it gets repainted, because a track in snow is not a track in dust. */
 function trackRecolourAll(){
-  for (let i = 0; i < TRACK.n; i++) TRACK.mesh.setColorAt(i, trackColor(TRACK.kind[i], _trC));
+  for (let i = 0; i < TRACK.n; i++){
+    if (TRACK.gone[i]) continue;
+    TRACK.mesh.setColorAt(i, trackColor(TRACK.kind[i], _trC));
+  }
   if (TRACK.mesh.instanceColor) TRACK.mesh.instanceColor.needsUpdate = true;
   TRACK.season = trackSurf();
 }
@@ -59954,10 +60089,15 @@ function primeCorridors(){
   }
 }
 window.__RC_TRACKS__ = {
-  mesh: TRACK.mesh, kind: TRACK.kind, get count(){ return TRACK.n; },
+  mesh: TRACK.mesh, kind: TRACK.kind, frost: TRACK.frost, gone: TRACK.gone,
+  get count(){ return TRACK.n; },
   get stamped(){ return TRACK.stamped; },
-  clear(){ TRACK.head = 0; TRACK.n = 0; TRACK.mesh.count = 0; TRACK.mesh.instanceMatrix.needsUpdate = true; },
+  get frostLevel(){ return FROST; }, set frostLevel(v){ FROST = v; },
+  get decayDepth(){ return DECAY_DEPTH; }, set decayDepth(v){ DECAY_DEPTH = v; },
+  clear(){ TRACK.head = 0; TRACK.n = 0; TRACK.mesh.count = 0;
+    TRACK.frost.fill(0); TRACK.gone.fill(0); TRACK.mesh.instanceMatrix.needsUpdate = true; },
   stamp: (x, z, dir, kind) => stampStep(x, z, dir, kind),
+  decay: trackDecay,
   prime: primeCorridors, recolour: trackRecolourAll,
   set enabled(v){ TRACK.enabled = !!v; }, get enabled(){ return TRACK.enabled; },
 };
@@ -61701,6 +61841,7 @@ function stepFrame(dt){
   updateMist(dt);
   updateRain(dt);
   updateSnow(dt);
+  trackDecay();
   updateLeaves(dt);
   updateShootingStars(dt);
   updateAudio(dt, dayF);
@@ -61718,10 +61859,11 @@ function stepFrame(dt){
   {
     for (const wm of waterMeshes){
       const pos = wm.geo.attributes.position;
+      const rs = wm.tarn ? (1 - tarnFreeze) : 1;   /* iced over, the water lies still under the lid */
       for(let i = 0; i < wm.rows.length; i++){
         const r = wm.rows[i];
-        pos.setY(i*6+1, WATER_Y + 0.06*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + tSim*0.45));
-        pos.setY(i*6+4, WATER_Y + 0.06*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + 0.8 + tSim*0.45));
+        pos.setY(i*6+1, WATER_Y + rs*(0.06*Math.sin(r.z*0.7 - tSim*1.8) + 0.04*Math.sin((r.cx - r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + tSim*0.45)));
+        pos.setY(i*6+4, WATER_Y + rs*(0.06*Math.sin(r.z*0.7 - 1.7 - tSim*1.8) + 0.04*Math.sin((r.cx + r.ww)*0.9 + r.z*0.3 + tSim*1.3) + 0.035*Math.sin(r.z*0.12 + 0.8 + tSim*0.45)));
       }
       pos.needsUpdate = true;
       /* normals change slowly on a near-flat ribbon — recompute on a slow cadence, not every frame */
@@ -62127,7 +62269,42 @@ if (muteEl){
   muteEl.addEventListener('click', () => { startAudio(); setMuted(!muted); });
 }
 
+/* No debris left hanging over open water. Rubble/rock instances that would sit
+   above the tarn (the geese's summer lake, with the cathedral looming behind it),
+   the big lake, or the river channel are dropped out of sight so none read as a
+   stone floating on the surface. Runs once after the scene is built. The ice lid
+   and its crack overlay are exempt; animals are Groups, never instanced. */
+function clearWaterDebris(){
+  const v = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(), m = new THREE.Matrix4();
+  const kill = new THREE.Matrix4().makeScale(0, 0, 0).setPosition(0, -999, 0);
+  let hidden = 0;
+  scene.traverse(o => {
+    if (!o.isInstancedMesh) return;
+    if (o.name === '__tarnice__' || o.name === '__tarncrack__') return;
+    let dirty = false;
+    for (let i = 0; i < o.count; i++){
+      o.getMatrixAt(i, m);
+      m.decompose(v, q, s);
+      if (s.x < 1e-4) continue;
+      const ww = waterHalfWidth(v.z);
+      const overChan = ww > 0.5 && Math.abs(v.x - waterCenterX(v.z)) < ww;
+      const overTarn = tarnEdge(v.x, v.z) > 0.0;
+      const ex = (v.x - LAKE_CX) / LAKE_RX, ez = (v.z - LAKE_CZ) / LAKE_RZ;
+      const overLake = ex * ex + ez * ez < 0.96;
+      if (!(overChan || overTarn || overLake)) continue;
+      const g = groundH(v.x, v.z);
+      /* a real islet / bank where the ground clears the waterline stays; a base
+         floating over a drowned bed goes. Low debris only — a structure reaching
+         up from dry land is left alone. */
+      if (v.y > g + 0.14 && v.y < WATER_Y + 8){ o.setMatrixAt(i, kill); dirty = true; hidden++; }
+    }
+    if (dirty) o.instanceMatrix.needsUpdate = true;
+  });
+  return hidden;
+}
+
 /* ---------- headless screenshot mode ---------- */
+clearWaterDebris();   /* once the scene exists, drop any rubble left floating in the water */
 if (SNAP){
   controls.update();
   for(let i = 0; i < 40; i++) stepFrame(0.05);   /* scatter wildlife + weather state */
