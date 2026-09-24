@@ -1722,6 +1722,19 @@ const BLOCKS = [];   /* keep for vegetation exclusion */
   litWinMat = lm.material;
 }
 
+/* Loose masonry floating in the open tarn — the water carries wreckage. */
+for (let i = 0; i < 16; i++){
+  const a = hash(i, 731) * 6.283;
+  const rad = 2.5 + hash(i, 732) * 9.5;
+  const x = TARN.x + Math.cos(a) * rad, z = TARN.z + Math.sin(a) * rad * 1.05;
+  if (tarnEdge(x, z) < 1.5) continue;                      /* keep off the shore, in open water */
+  const sy = 0.32 + hash(i, 733) * 0.5;
+  rubbleCells.push({ x, y: WATER_Y + 0.15 * sy, z,
+    sx: 0.6 + hash(i, 734) * 1.2, sy, sz: 0.55 + hash(i, 735) * 1.0,
+    ry: hash(i, 736) * 3.14, rz: (hash(i, 737) - 0.5) * 0.18,
+    color: [0xb3a78f, 0xa99d85, 0x9f9278, 0x96896f][i & 3] });
+}
+
 /* ---------- shared rubble ---------- */
 columns(rubbleCells, lamber(0xffffff));
 
@@ -9100,6 +9113,37 @@ window.__RC_GROUND__ = groundH;   /* debug: terrain height sampler */
 window.__RC_TARN__ = { def: TARN, edge: tarnEdge, radius: tarnRadius, waterIntervals: tarnWaterIntervals };
 window.__RC_FERRIS__ = ferris;   /* debug: ferris wheel spin + gondola pivots */
 window.__RC_WINDMILL__ = windmill;   /* debug: windmill cap + hub */
+/* ---------- settle floating masonry over the tarn ----------
+   Masonry near the tarn shore (building collapses, scatters) can end up hovering
+   above the water with its shadow in the gap. Across every instanced mesh, any
+   masonry-sized block sitting over the tarn whose underside is above the surface
+   gets settled so its top just breaks the water — resting in the water, not
+   suspended over it. Runs once, after the scene is fully built. */
+(() => {
+  const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
+  scene.updateMatrixWorld(true);
+  scene.traverse(o => {
+    if (!o.isInstancedMesh) return;
+    let touched = false;
+    for (let i = 0; i < o.count; i++){
+      o.getMatrixAt(i, _m);
+      _m.decompose(_p, _q, _s);
+      o.localToWorld(_p);
+      if (tarnEdge(_p.x, _p.z) <= -1.2) continue;              /* not at the tarn */
+      if (!(_s.x >= 0.4 && _s.z >= 0.38 && _s.y >= 0.3)) continue;  /* a block, not a reed/tuft */
+      const bottom = _p.y - 0.5 * _s.y;
+      if (bottom > WATER_Y - 0.04){
+        _p.y = WATER_Y + 0.16 * _s.y;
+        o.worldToLocal(_p);
+        _m.compose(_p, _q, _s);
+        o.setMatrixAt(i, _m);
+        touched = true;
+      }
+    }
+    if (touched) o.instanceMatrix.needsUpdate = true;
+  });
+})();
+
 window.__RC_SCENE__ = scene;      /* debug: scene + THREE for raycast probes */
 window.__RC_THREE__ = THREE;
 window.__RC_READY__ = true;
