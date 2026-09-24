@@ -5541,6 +5541,37 @@ function updateLeaves(dt){
   if (leafMesh.instanceColor) leafMesh.instanceColor.needsUpdate = true;
 }
 
+/* ---------- spring blossom: pale petals drifting off the trees (spring, calm days) ---------- */
+const BLOSSOM_N = 220;
+let blossomOp = 0, blossomMesh;
+{
+  const g = new THREE.BoxGeometry(0.3, 0.02, 0.22);
+  blossomMesh = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0 }), BLOSSOM_N);
+  blossomMesh.frustumCulled = false;
+  const d = new Array(BLOSSOM_N);
+  for (let i = 0; i < BLOSSOM_N; i++) d[i] = { x: -125 + (Math.random() - 0.5) * 80, z: -20 + (Math.random() - 0.5) * 80, y: Math.random() * 14 + 2, sp: 1.0 + Math.random() * 1.4, ph: Math.random() * 6.28, rot: Math.random() * 6.28, c: (i % 3 === 0 ? 0xef9ec0 : (i % 3 === 1 ? 0xfbd6e4 : 0xffeef4)) };
+  blossomMesh.userData.d = d; blossomMesh.renderOrder = 3; scene.add(blossomMesh);
+}
+function updateBlossom(dt){
+  blossomMesh.visible = season === 0 && wx.rain < 0.25;
+  if (!blossomMesh.visible){ blossomOp = 0; return; }
+  blossomOp += (1 - blossomOp) * Math.min(1, dt * 0.3);
+  blossomMesh.material.opacity = 0.85 * blossomOp;
+  const m4 = new THREE.Matrix4(), p = new THREE.Vector3(), s = new THREE.Vector3(), q = new THREE.Quaternion(), e = new THREE.Euler();
+  const d = blossomMesh.userData.d;
+  for (let i = 0; i < BLOSSOM_N; i++){
+    const r = d[i];
+    r.y -= r.sp * dt; r.ph += dt * 1.8; r.rot += dt * (1.1 + Math.sin(r.ph) * 1.6);
+    r.x += (Math.sin(r.ph) * 1.1 + wx.wind * 1.5) * dt; r.z += Math.cos(r.ph * 0.8) * 0.7 * dt;
+    if (r.y < -0.3){ r.y = 12 + Math.random() * 12; r.x = controls.target.x + (Math.random() - 0.5) * 80; r.z = controls.target.z + (Math.random() - 0.5) * 80; }
+    e.set(Math.sin(r.rot) * 0.7, r.rot, Math.cos(r.rot) * 0.7); q.setFromEuler(e);
+    p.set(r.x, r.y, r.z); s.set(1, 1, 1); m4.compose(p, q, s); blossomMesh.setMatrixAt(i, m4);
+    blossomMesh.setColorAt(i, tmpC.set(r.c));
+  }
+  blossomMesh.instanceMatrix.needsUpdate = true;
+  if (blossomMesh.instanceColor) blossomMesh.instanceColor.needsUpdate = true;
+}
+
 /* ---------- shooting stars: rare streaks across the dark sky ---------- */
 let shootMesh, shootGeo, shootA, shootB, shootV, shootLife = 0, shootNext = 6 + Math.random() * 6;
 {
@@ -8604,6 +8635,7 @@ function stepFrame(dt){
   updateSnow(dt);
   trackDecay();
   updateLeaves(dt);
+  updateBlossom(dt);
   updateShootingStars(dt);
   updateAudio(dt, dayF);
   /* wind sway */
