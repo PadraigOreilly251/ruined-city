@@ -5008,7 +5008,6 @@ scene.background = skyTex;
 const cTop = new THREE.Color(), cMid = new THREE.Color(), cHor = new THREE.Color(),
       cSun = new THREE.Color(), cFog = new THREE.Color(), cFogGray = new THREE.Color(0x9aa2aa), cFogSnow = new THREE.Color(0xe6ecf3);
 let lastSkyKey = -1;
-function lerpHex(a, b, t){ return a + (b - a) * t; }
 function hexLerp(h1, h2, t){
   const a = new THREE.Color(h1), b = new THREE.Color(h2);
   return '#' + a.lerp(b, t).getHexString();
@@ -8047,6 +8046,10 @@ function updateGulls(dt, dayF){
         b.stoopFrom.x + (b.stoopTo.x - b.stoopFrom.x) * e,
         b.stoopFrom.y + (b.stoopTo.y - b.stoopFrom.y) * e,
         b.stoopFrom.z + (b.stoopTo.z - b.stoopFrom.z) * e);
+      /* the climb-out can cut across a headland — lift it clear of rising ground */
+      { const cG = groundH(b.g.position.x, b.g.position.z);
+        const cF = cG > WATER_Y ? cG + 2.5 : WATER_Y + 1.2;
+        if (b.g.position.y < cF) b.g.position.y = cF; }
       let f, sweep;
       if (p < 0.55){ f = flapWave(tSim, b.flapRate * 1.6, b.flapPh) * 0.85; sweep = 0.25; }
       else { f = -0.24; sweep = 0.05 * Math.sin(tSim * 0.7 + b.flapPh); }
@@ -8059,10 +8062,17 @@ function updateGulls(dt, dayF){
       /* the lazy wheel: drifting circuit, glides, gentle bob */
       const dm = 1 + 0.15 * Math.sin(tSim * b.driftSp + b.driftPh);
       const gliding = b.flapT <= 0;
+      const px = ocx + Math.cos(b.ph) * b.rx * dm;
+      const pz = ocz + Math.sin(b.ph) * b.rz * dm;
+      /* keep the wheel clear of the headland: a gull circles at ~b.h, but where the
+         circuit passes over rising ground it banks up to clear it; over the water
+         the floor is just above the surface. (stoop/climb handled separately) */
+      const gy = groundH(px, pz);
+      const floor = (gy > WATER_Y ? gy + 2.5 : WATER_Y + 1.2);
       b.g.position.set(
-        ocx + Math.cos(b.ph) * b.rx * dm,
-        yCircuit - (gliding ? 0.9 : 0),
-        ocz + Math.sin(b.ph) * b.rz * dm);
+        px,
+        Math.max(yCircuit - (gliding ? 0.9 : 0), floor),
+        pz);
       let f, sweep;
       if (gliding){
         /* held-wing V with a slow rock and an in-out sweep */
