@@ -62293,10 +62293,15 @@ function clearWaterDebris(){
       const overLake = ex * ex + ez * ez < 0.96;
       if (!(overChan || overTarn || overLake)) continue;
       const g = groundH(v.x, v.z);
-      /* a real islet / bank where the ground clears the waterline stays; a base
-         floating over a drowned bed goes. Low debris only — a structure reaching
-         up from dry land is left alone. */
-      if (v.y > g + 0.14 && v.y < WATER_Y + 8){ o.setMatrixAt(i, kill); dirty = true; hidden++; }
+      /* Two ways a rock reads as floating in the open water, both go:
+           (a) base hangs above the ground (airborne rubble), or
+           (b) it rests on a bed that is itself UNDER the waterline (g < WATER_Y),
+               so the stone pokes up out of a submerged shore shelf — the classic
+               "rock floating in the geese lake". Only a genuine islet/bank whose
+               ground clears the water (g >= WATER_Y) with a seated base survives.
+         Low debris only — a tall structure reaching up from dry land is untouched. */
+      const submergedBed = g < WATER_Y;          /* ground here is under the surface */
+      if ((v.y > g + 0.14 || submergedBed) && v.y < WATER_Y + 8){ o.setMatrixAt(i, kill); dirty = true; hidden++; }
     }
     if (dirty) o.instanceMatrix.needsUpdate = true;
   });

@@ -15,8 +15,9 @@
       const overLake = (() => { const CX=114, CZ=245, RX=50, RZ=78; const ex=(v.x-CX)/RX, ez=(v.z-CZ)/RZ; return ex*ex+ez*ez < 0.96; })();
       if (!(overChan || overTarn || overLake)) continue;
       const g = window.__RC_GROUND__(v.x, v.z);
-      if (v.y > g + 0.14 && v.y < -0.55 + 8){
-        n++; if (samp.length < 8) samp.push(`(${v.x.toFixed(0)},${v.z.toFixed(0)}) y=${v.y.toFixed(2)} g=${g.toFixed(2)}${overTarn?' tarn':overLake?' LAKE':' chan'}`);
+      const submergedBed = g < -0.55;   /* ground here is under the water surface */
+      if ((v.y > g + 0.14 || submergedBed) && v.y < -0.55 + 8){
+        n++; if (samp.length < 8) samp.push(`(${v.x.toFixed(0)},${v.z.toFixed(0)}) y=${v.y.toFixed(2)} g=${g.toFixed(2)}${submergedBed?' DROWNED-BED':''}${overTarn?' tarn':overLake?' LAKE':' chan'}`);
       }
     }
   });
