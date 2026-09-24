@@ -6260,6 +6260,200 @@ function updateFlock(dt, dayF){
 }
 window._flock = flockList;
 
+/* ---------- grey heron — wading the tarn shallows ----------
+   A grey heron hunts the edge: stands motionless in the shallows with its neck
+   drawn into a tight S, then uncoils to stalk, and snaps the bill forward-down
+   in a blink at something under the surface. Once in a while it labour-lifts
+   off, neck folded back against its shoulders, and drops onto another stretch of
+   shoreline. Day bird — roosts and hides after dark; in winter it is gone south
+   like the geese. */
+const WY = -0.55;
+function wadingSpot(angle){
+  const cx = TARN.x, cz = TARN.z;
+  for (let r = 10.2; r <= 14.5; r += 0.35){
+    const x = cx + Math.cos(angle) * r, z = cz + Math.sin(angle) * 1.05 * r;
+    const depth = WY - groundH(x, z);
+    if (depth > 0.15 && depth < 0.82) return { x, z, r, depth };
+  }
+  const x = cx + Math.cos(angle) * 11, z = cz + Math.sin(angle) * 1.05 * 11;
+  return { x, z, r: 11, depth: WY - groundH(x, z) };
+}
+const herons = [];
+/* pose sets for the folded-S neck: [neckLow.rot.x, neckHigh.rot.x, bill pitch] */
+const HERON_POSE = {
+  wade:   [-0.95, 1.75, -0.5],   /* head tucked back by the chest, bill down */
+  stalk:  [-0.35, 0.72, 0.12],   /* neck eased forward, bill level, intent */
+  strike: [0.12, 0.18, 0.55],    /* the snap — thrust forward and down */
+  tuck:   [-1.5, 1.95, -0.3],    /* folded tight for flight */
+};
+function makeHeron(seed, startSpot){
+  const s = 1.55 + (hash(seed, 600) - 0.5) * 0.18;
+  const g = new THREE.Group();
+  const slate = lamber(0x8f9aa6), pale = lamber(0xc3cbd2), white = lamber(0xeceff2),
+        capC = lamber(0x24282e), billC = lamber(0xdfb64f), legC = lamber(0x6b5a50),
+        wingC = lamber(0x9aa4b0), tipC = lamber(0x2a2e34);
+  const legLen = 0.62 * s;
+  const legs = [];
+  for (const sx of [-1, 1]){
+    const lg = new THREE.Group();
+    const thigh = new THREE.Mesh(B(0.032 * s, legLen, 0.032 * s), legC);
+    thigh.position.y = legLen / 2; thigh.castShadow = true; lg.add(thigh);
+    const foot = new THREE.Mesh(B(0.05 * s, 0.02 * s, 0.12 * s), legC);
+    foot.position.set(0, 0.01, 0.05 * s); lg.add(foot);
+    lg.position.set(sx * 0.055 * s, 0, 0); legs.push(lg); g.add(lg);
+  }
+  const bodyY = legLen + 0.16 * s;
+  const body = new THREE.Mesh(B(0.26 * s, 0.3 * s, 0.62 * s), slate);
+  body.position.set(0, bodyY, -0.02 * s); body.rotation.x = -0.06; body.castShadow = true; g.add(body);
+  const breast = new THREE.Mesh(B(0.24 * s, 0.22 * s, 0.2 * s), pale);
+  breast.position.set(0, bodyY - 0.03 * s, 0.16 * s); g.add(breast);
+  const tail = new THREE.Mesh(B(0.14 * s, 0.05 * s, 0.26 * s), slate);
+  tail.position.set(0, bodyY + 0.13 * s, -0.42 * s); tail.rotation.x = 0.32; g.add(tail);
+  /* folded wings as a cloak over the back (shown when not flying) */
+  const cloakL = new THREE.Mesh(B(0.12 * s, 0.1 * s, 0.46 * s), wingC); cloakL.position.set(-0.13 * s, bodyY + 0.02 * s, -0.05 * s); cloakL.rotation.set(0.05, 0, 0.12); g.add(cloakL);
+  const cloakR = cloakL.clone(); cloakR.position.x = 0.13 * s; cloakR.rotation.z = -0.12; g.add(cloakR);
+  /* flapping wings (hidden while wading, used in flight) */
+  const mkWing = (side) => {
+    const geo = new THREE.BoxGeometry(0.62 * s, 0.02 * s, 0.34 * s);
+    geo.translate(side * 0.31 * s, 0, -0.02 * s);
+    const pa = geo.attributes.position;
+    for (let v = 0; v < pa.count; v++){
+      const t = Math.abs(pa.getX(v)) / (0.62 * s);
+      const f = 1 - 0.55 * t;
+      pa.setZ(v, (pa.getZ(v) + 0.02 * s) * f - 0.02 * s);
+      pa.setY(v, pa.getY(v) * (1 - 0.35 * t));
+    }
+    geo.computeVertexNormals(); return geo;
+  };
+  const wl = new THREE.Mesh(mkWing(-1), wingC); wl.visible = false; g.add(wl);
+  const wr = new THREE.Mesh(mkWing(1), wingC); wr.visible = false; g.add(wr);
+  const tipL = new THREE.Mesh(B(0.18 * s, 0.014, 0.16 * s), tipC); tipL.position.set(-0.54 * s, 0, 0); wl.add(tipL);
+  const tipR = new THREE.Mesh(B(0.18 * s, 0.014, 0.16 * s), tipC); tipR.position.set(0.54 * s, 0, 0); wr.add(tipR);
+  /* two-segment S-neck. neckLow pivots at the shoulder; neckHigh at its top. */
+  const neckLow = new THREE.Group();
+  neckLow.position.set(0, bodyY + 0.1 * s, 0.16 * s);
+  const nlLen = 0.34 * s;
+  const lowSeg = new THREE.Mesh(B(0.1 * s, nlLen, 0.1 * s), pale);
+  lowSeg.position.y = nlLen / 2; lowSeg.castShadow = true; neckLow.add(lowSeg);
+  const neckHigh = new THREE.Group(); neckHigh.position.y = nlLen; neckLow.add(neckHigh);
+  const nhLen = 0.28 * s;
+  const highSeg = new THREE.Mesh(B(0.085 * s, nhLen, 0.085 * s), white);
+  highSeg.position.y = nhLen / 2; highSeg.castShadow = true; neckHigh.add(highSeg);
+  const headG = new THREE.Group(); headG.position.y = nhLen; neckHigh.add(headG);
+  const skull = new THREE.Mesh(B(0.11 * s, 0.11 * s, 0.16 * s), white); skull.position.set(0, 0, 0.05 * s); skull.castShadow = true; headG.add(skull);
+  const cap = new THREE.Mesh(B(0.115 * s, 0.06 * s, 0.18 * s), capC); cap.position.set(0, 0.05 * s, 0.03 * s); headG.add(cap);
+  const plume = new THREE.Mesh(B(0.02 * s, 0.02 * s, 0.22 * s), capC); plume.position.set(0, 0.05 * s, -0.12 * s); plume.rotation.x = -0.2; headG.add(plume);
+  const bill = new THREE.Mesh(B(0.03 * s, 0.03 * s, 0.3 * s), billC); bill.position.set(0, -0.01 * s, 0.28 * s); headG.add(bill);
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x2a2410, emissive: 0xffd98a, emissiveIntensity: 0 });
+  for (const sx of [-1, 1]){ const eye = new THREE.Mesh(B(0.022 * s, 0.022 * s, 0.02 * s), eyeM); eye.position.set(sx * 0.055 * s, 0.02 * s, 0.14 * s); headG.add(eye); }
+  g.add(neckLow);
+  const sp = startSpot || wadingSpot(hash(seed, 601) * 6.283);
+  g.position.set(sp.x, groundH(sp.x, sp.z), sp.z);
+  scene.add(g);
+  const a = { g, legs, body, wl, wr, tipL, tipR, neckLow, neckHigh, headG, bill, cloakL, cloakR, eyeM, s,
+    seed, phase: hash(seed, 1) * 6.28, spot: sp, state: 'wade', t: 2 + Math.random() * 4,
+    pose: HERON_POSE.wade.slice(), poseSpeed: 3, flapPh: Math.random() * 6.283,
+    fly: null, flyCooldown: 18 + Math.random() * 28 };
+  herons.push(a); DAY_ANIMALS.push(a);
+  return a;
+}
+/* a short low flight to another stretch of shoreline */
+function heronTakeoff(a){
+  const to = wadingSpot(Math.random() * 6.283);
+  const fx = a.g.position.x, fz = a.g.position.z, fy = a.g.position.y;
+  const tx = to.x, tz = to.z, ty = groundH(tx, tz);
+  const dist = Math.hypot(tx - fx, tz - fz);
+  if (dist < 6) { a.flyCooldown = 6 + Math.random() * 8; return; }
+  const dur = 3.2 + dist * 0.12;
+  a.fly = { fx, fy, fz, tx, ty, tz, dist, t: 0, dur, apex: 6 + dist * 0.35 + Math.random() * 3 };
+  a.state = 'fly';
+  a.cloakL.visible = false; a.cloakR.visible = false;   /* shed the wing-cloak, spread to fly */
+  a.wl.visible = true; a.wr.visible = true;
+}
+function updateHerons(dt, dayF){
+  const winter = season === 3;
+  const out = winter ? 0 : (dayF > 0.3 ? 1 : 0);   /* roost at night; migrated in winter */
+  for (const a of herons){
+    const pd = playerDist(a.g.position.x, a.g.position.z);
+    /* spook: a close wanderer lifts it off */
+    if (a.state !== 'fly' && pd < 6 && a.flyCooldown <= 0){ heronTakeoff(a); }
+    if (a.state === 'fly'){
+      const fl = a.fly;
+      if (!fl){ a.state = 'wade'; a.t = 2; continue; }
+      fl.t += dt;
+      const p = clamp01(fl.t / fl.dur);
+      const ex = 1 - p;   /* ease in/out on the ground track */
+      const tt = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      a.g.position.x = fl.fx + (fl.tx - fl.fx) * tt;
+      a.g.position.z = fl.fz + (fl.tz - fl.fz) * tt;
+      const lift = Math.sin(p * Math.PI) * fl.apex;
+      a.g.position.y = fl.fy + (fl.ty - fl.fy) * tt + lift;
+      orientBird(a, dt, 0.5, 0.6);
+      /* strong laboring wingbeats near takeoff/landing, calmer mid-glide */
+      const beat = 2.6 + 1.6 * (1 - Math.sin(p * Math.PI));
+      const f = flapWave(tSim, beat, a.flapPh);
+      wingPose(a.wl, a.wr, f, 0.12, a.tipL, a.tipR);
+      /* neck folded back, legs trailing */
+      setHeronPose(a, HERON_POSE.tuck, dt, 8);
+      for (const lg of a.legs){ lg.rotation.x = 0.9 + Math.sin(tSim * 2) * 0.04; }
+      if (p >= 1){
+        a.state = 'wade'; a.t = 2 + Math.random() * 5;
+        a.spot = { x: a.g.position.x, z: a.g.position.z, r: 0, depth: WY - groundH(a.g.position.x, a.g.position.z) };
+        a.wl.visible = false; a.wr.visible = false;
+        a.cloakL.visible = true; a.cloakR.visible = true;
+        a.fly = null; a.flyCooldown = 22 + Math.random() * 34;
+        a.px = undefined; a.bank = 0; a.pitch = 0;   /* reset flight attitude on landing */
+        a.g.rotation.x = 0; a.g.rotation.z = 0;      /* stand level again, no residual bank */
+      }
+    } else {
+      /* wading state machine: stand → stalk → strike, occasional slow step to the side */
+      a.t -= dt;
+      if (a.flyCooldown > 0) a.flyCooldown -= dt;
+      if (a.state === 'wade' && a.t <= 0){
+        const r = Math.random();
+        if (r < 0.55){ a.state = 'stalk'; a.t = 1.2 + Math.random() * 2.2; }
+        else if (r < 0.75){ a.state = 'step'; a.t = 1.5 + Math.random() * 2; a.stepDir = a.g.rotation.y + (Math.random() - 0.5) * 1.6; }
+        else a.t = 2 + Math.random() * 4;
+      } else if (a.state === 'stalk' && a.t <= 0){
+        a.state = 'strike'; a.t = 0.22 + Math.random() * 0.14;
+      } else if (a.state === 'strike' && a.t <= 0){
+        a.state = 'wade'; a.t = 1.5 + Math.random() * 3;
+      } else if (a.state === 'step' && a.t <= 0){ a.state = 'wade'; a.t = 2 + Math.random() * 3; }
+      if (a.state === 'step'){
+        const sp = 0.55;
+        const nx = a.g.position.x + Math.sin(a.stepDir) * sp * dt, nz = a.g.position.z + Math.cos(a.stepDir) * sp * dt;
+        const ndepth = WY - groundH(nx, nz);
+        if (ndepth > 0.1 && ndepth < 1.2){ a.g.position.x = nx; a.g.position.z = nz; }
+        else a.stepDir += 1.2;
+        a.g.rotation.y += (a.stepDir - a.g.rotation.y) * (1 - Math.exp(-dt * 4));
+        const lp = Math.sin(tSim * 6 + a.phase);
+        a.legs[0].rotation.x = lp * 0.5; a.legs[1].rotation.x = -lp * 0.5;
+        setHeronPose(a, HERON_POSE.stalk, dt, 2);
+      } else {
+        a.legs[0].rotation.x *= 0.85; a.legs[1].rotation.x *= 0.85;
+        if (a.state === 'strike') setHeronPose(a, HERON_POSE.strike, dt, 22);
+        else if (a.state === 'stalk') setHeronPose(a, HERON_POSE.stalk, dt, 2.4);
+        else setHeronPose(a, HERON_POSE.wade, dt, 2);
+      }
+      /* a slow idle sway and head-turn so standing is not frozen */
+      a.g.rotation.y += Math.sin(tSim * 0.3 + a.phase) * dt * 0.05;
+    }
+    a.eyeM.emissiveIntensity = Math.max(0, 0.55 - dayF) * 1.5 * Math.max(0, 1 - pd / 14);
+    setAnimalScale(a, dt, out);
+  }
+}
+/* ease each neck-segment / bill angle toward a target pose set at rate r */
+function setHeronPose(a, pose, dt, r){
+  const k = 1 - Math.exp(-dt * r);
+  a.neckLow.rotation.x += (pose[0] - a.neckLow.rotation.x) * k;
+  a.neckHigh.rotation.x += (pose[1] - a.neckHigh.rotation.x) * k;
+  a.bill.rotation.x += (pose[2] - a.bill.rotation.x) * k;
+}
+/* two herons on the tarn edge; they share the shoreline, each with its own beat */
+makeHeron(7100, wadingSpot(2.1));
+makeHeron(7300, wadingSpot(4.6));
+window._herons = herons;
+
 /* ---------- fox (dusk/night, bounding along streets) ---------- */
 const foxes = [];
 function makeFox(seed){
@@ -8010,6 +8204,7 @@ function stepFrame(dt){
   if (CATH_FLAME_MAT) CATH_FLAME_MAT.emissiveIntensity = (1 - dayF) * (3.2 + Math.sin(tSim * 5.3) * 0.8);
   updateDeer(dt, dayF);
   updateFlock(dt, dayF);
+  updateHerons(dt, dayF);
   updateFox(dt, dayF);
   updateSquirrels(dt, dayF);
   updateRabbits(dt, dayF);
