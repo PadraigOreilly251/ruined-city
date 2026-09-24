@@ -53,6 +53,15 @@
     display:none;
   }
   #coords b{color:#4a3a2c;}
+  #flag{
+    position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(8px);z-index:12;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#23281f;
+    background:rgba(238,240,226,.86);padding:6px 14px;border-radius:16px;
+    backdrop-filter:blur(6px);border:1px solid rgba(0,0,0,.10);
+    pointer-events:auto;user-select:text;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis;
+    opacity:0;transition:opacity .18s ease,transform .18s ease;
+  }
+  #flag.show{opacity:1;transform:translateX(-50%) translateY(0);}
 </style>
 
 </head>
@@ -68,11 +77,12 @@
   clearing stands a stone circle far older than the city. In the open water beyond the cove, at night, something enormous surfaces now and then. Everything you see is real and walkable: there is no backdrop wall, only a city lost
   in the hills.</p>
 </div>
-<div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes &middot; press <b>X</b> for the coordinate crosshair, <b>C</b> copies the spot</div>
+<div id="hint">drag to orbit &middot; scroll to zoom &middot; right-drag or WASD to walk the city &middot; a full day &amp; night passes every 4 minutes &middot; press <b>X</b> for the coordinate crosshair, <b>C</b> copies the spot, <b>F</b> copies this exact view as a link</div>
 <div id="clock"></div>
 <div id="mute" title="toggle ambient sound">🔊</div>
 <div id="cross"></div>
 <div id="coords"></div>
+<div id="flag"></div>
 <script>
 /* three.js r160 (three.module.js inlined, export statement converted) */
 /**
@@ -54593,8 +54603,20 @@ const CAM_PRESETS = {
   anchorB:{ p: [30, 38, -74],   t: [-20, 10, -20] },
 };
 const camP = CAM_PRESETS[HASH.get('cam')] || (SNAP ? CAM_PRESETS.hero : CAM_PRESETS.hero);
-controls.target.set(camP.t[0], camP.t[1], camP.t[2]);
-camera.position.set(camP.p[0], camP.p[1], camP.p[2]);
+/* An exact view can be pinned in the hash: campos/camtgt override the preset, fov the default.
+   Press F in the running scene to capture the current view as such a URL (see the FLAG handler). */
+function hashVec(s){
+  if (!s) return null;
+  const a = s.split(',').map(parseFloat);
+  return (a.length === 3 && a.every(n => isFinite(n))) ? a : null;
+}
+const _cp0 = hashVec(HASH.get('campos')), _ct0 = hashVec(HASH.get('camtgt'));
+if (_ct0) controls.target.set(_ct0[0], _ct0[1], _ct0[2]); else controls.target.set(camP.t[0], camP.t[1], camP.t[2]);
+if (_cp0) camera.position.set(_cp0[0], _cp0[1], _cp0[2]); else camera.position.set(camP.p[0], camP.p[1], camP.p[2]);
+if (HASH.has('fov')){ const _fv = parseFloat(HASH.get('fov')); if (isFinite(_fv)){ camera.fov = clampN(_fv, 12, 120); camera.updateProjectionMatrix(); } }
+/* A pinned view must keep the exact angle it was captured at: the walker's ground-follow
+   would otherwise drag the look-at down to eye height, so restore implies aerial (freecam). */
+if (_cp0 || _ct0) window.__RC_FREECAM__ = true;
 controls.enableDamping = true; controls.dampingFactor = 0.07;
 controls.enablePan = true; controls.screenSpacePanning = false;
 controls.minDistance = 4; controls.maxDistance = 190;
@@ -62910,6 +62932,53 @@ window.__RC_COORDS__ = {
   pick(){ _pickList = null; updateCoords(true); return window.__RC_POINT__; },
   pickCount(){ pickList(); return _pickList.length; },
 };
+
+/* ---------- FLAG: capture the exact view for reporting ----------
+   Press F to snapshot the current camera framing (position + look-at + fov) together
+   with the clock (hour + season day) and weather, as a single URL that reopens the
+   scene on this exact view. It is copied to the clipboard, logged to the console, and
+   shown in a toast. One-shot only - nothing runs until the keypress, so there is no
+   per-frame cost (unlike the X crosshair, which raycasts on camera change). */
+function captureView(){
+  const r1 = n => Math.round(n * 10) / 10;
+  const f = v => [r1(v.x), r1(v.y), r1(v.z)].join(',');
+  const wxs = (typeof wxName !== 'undefined' && wxName) ? wxName : '';
+  let spot = null;
+  try {
+    _cray.setFromCamera(_cndc, camera);          /* one raycast for the crosshair ground spot */
+    const gp = rayGroundPoint(_cray.ray);
+    if (gp) spot = { x: Math.round(gp.x), y: +gp.y.toFixed(1), z: Math.round(gp.z) };
+  } catch (e) {}
+  const h = '#campos=' + f(camera.position) + '&camtgt=' + f(controls.target)
+          + '&fov=' + r1(camera.fov)
+          + '&time=' + (+simHour.toFixed(1)) + '&day=' + Math.floor(simDay)
+          + (wxs ? '&wx=' + wxs : '');
+  return { h, url: location.origin + location.pathname + h, spot };
+}
+let _flagTimer = 0;
+function showFlag(txt, ok){
+  const el = document.getElementById('flag');
+  if (!el) return;
+  el.textContent = txt;
+  el.style.color = ok ? '#2c7a3f' : '#8a3b2a';
+  el.classList.add('show');
+  clearTimeout(_flagTimer);
+  _flagTimer = setTimeout(() => el.classList.remove('show'), 7000);
+}
+addEventListener('keydown', e => {
+  if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key.toLowerCase() !== 'f') return;
+  e.preventDefault();
+  const c = captureView();
+  console.log('%c[RFLAG] ' + c.url, 'color:#b8345f;font-weight:bold');
+  if (c.spot) console.log('   crosshair ground:  x=' + c.spot.x + '  y=' + c.spot.y + '  z=' + c.spot.z);
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(c.url).then(
+      () => showFlag('✓ copied — ' + c.h, true),
+      () => showFlag(c.url, false));
+  } else showFlag(c.url, false);
+});
+window.__RC_FLAG__ = () => captureView();
 function updateNav(dt){
   const speed = 14;
   const fwd = new THREE.Vector3();
