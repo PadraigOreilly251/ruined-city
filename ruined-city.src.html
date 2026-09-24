@@ -8250,6 +8250,50 @@ function updateBats(dt, dayF){
   }
 }
 
+/* ---------- winter aurora: a shimmering curtain across the clear night sky ---------- */
+/* Big additive band riding high over the far-hill ring. Only a winter night that
+   is properly dark and clear earns it — cloud or rain wipes it out. */
+let auroraMat, auroraMesh;
+{
+  const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, 512, 256);
+  const grd = g.createLinearGradient(0, 256, 0, 0);
+  grd.addColorStop(0.00, 'rgba(20,80,60,0)');
+  grd.addColorStop(0.18, 'rgba(30,150,90,0.55)');
+  grd.addColorStop(0.45, 'rgba(60,220,150,0.85)');
+  grd.addColorStop(0.72, 'rgba(90,180,220,0.5)');
+  grd.addColorStop(1.00, 'rgba(40,60,140,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 512, 256);
+  /* soft vertical rays so the curtain reads as striations, not a flat wash */
+  for (let i = 0; i < 26; i++){
+    const x = hash(i, 91) * 512, w = 8 + hash(i, 92) * 34, a = 0.05 + hash(i, 93) * 0.22;
+    const rg = g.createLinearGradient(x, 0, x + w, 0);
+    rg.addColorStop(0, 'rgba(180,255,220,0)'); rg.addColorStop(0.5, 'rgba(180,255,220,' + a + ')'); rg.addColorStop(1, 'rgba(180,255,220,0)');
+    g.fillStyle = rg; g.fillRect(x, 0, w, 256);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.ClampToEdgeWrapping; tex.repeat.set(2, 1);
+  auroraMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false, fog: false });
+  const geo = new THREE.CylinderGeometry(300, 340, 150, 56, 1, true);
+  auroraMesh = new THREE.Mesh(geo, auroraMat);
+  auroraMesh.position.set(60, 74, 170);   /* centred over the map, high above the hills */
+  auroraMesh.renderOrder = 1;
+  scene.add(auroraMesh);
+  auroraMesh.userData.tex = tex;
+}
+function updateAurora(dt){
+  const clear = wx.clouds < 0.55 && wx.rain < 0.12 && wx.dim > 0.55;
+  const active = season === 3 && nightFNow > 0.5 && clear;
+  const shimmer = 0.75 + 0.18 * Math.sin(tSim * 0.5) + 0.1 * Math.sin(tSim * 1.3 + 1.7);
+  const target = active ? shimmer : 0;
+  auroraMat.opacity += (target - auroraMat.opacity) * (1 - Math.exp(-dt * (active ? 0.5 : 1.4)));
+  if (auroraMat.opacity < 0.01) return;
+  /* the curtain drifts and slowly turns */
+  auroraMesh.userData.tex.offset.x += dt * 0.006;
+  auroraMesh.rotation.y += dt * 0.004;
+}
+
 /* ---------- fireflies (night meadow + city pockets) ---------- */
 let fireflyMat, fireflyPos, fireflyCol;
 {
@@ -8825,6 +8869,7 @@ function stepFrame(dt){
   updateBats(dt, dayF);
   updateFireflies(dt, dayF);
   updateMidges(dt, dayF);
+  updateAurora(dt);
   updatePollinators(dt, dayF);
   updateDragonflies(dt, dayF);
 }
