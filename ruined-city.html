@@ -59933,11 +59933,12 @@ function updateShootingStars(dt){
    regulars along the avenue. Grazing is deliberately NOT recorded — a field
    pitted with prints reads as panic, not pasture. */
 const TRACK_MAX = 9000;
-const TRACK_KINDS = { deer: 0, fox: 1, goose: 2 };
+const TRACK_KINDS = { deer: 0, fox: 1, goose: 2, rabbit: 3 };
 const TRACK_SHAPE = [
   { w: 0.10, l: 0.24, off: 0.19 },   /* deer: paired cloven print */
   { w: 0.08, l: 0.11, off: 0.075 },  /* fox: narrow paw, near the centre line */
   { w: 0.18, l: 0.28, off: 0.15 },   /* goose: big webbed splay */
+  { w: 0.045, l: 0.075, off: 0.035 },/* rabbit: tiny footfall, tight to the run */
 ];
 const TRACK = { n: 0, head: 0, season: -1, mesh: null, mat: null, enabled: true, stamped: 0,
   kind: new Uint8Array(TRACK_MAX),
@@ -59964,10 +59965,10 @@ function trackColor(k, out){
   /* In snow a track is a shadow in the surface, so it stays close to white; on dry
      ground it is earth worn through the turf, and much quieter. Both deliberately
      low-contrast: at full strength the prints read as flagstones laid on the map. */
-  if (season === 3 || wx.snow > 0.35) out.setHex([0xc6d0da, 0xc0cad4, 0xcbd4dd][k]);
-  else if (season === 2) out.setHex([0x7a6746, 0x6f5c3e, 0x84714f][k]);
-  else if (season === 1) out.setHex([0x87744f, 0x7b6847, 0x8f7c57][k]);
-  else out.setHex([0x786a51, 0x6e6049, 0x817258][k]);
+  if (season === 3 || wx.snow > 0.35) out.setHex([0xc6d0da, 0xc0cad4, 0xcbd4dd, 0xcdd7df][k]);
+  else if (season === 2) out.setHex([0x7a6746, 0x6f5c3e, 0x84714f, 0x7d6b4b][k]);
+  else if (season === 1) out.setHex([0x87744f, 0x7b6847, 0x8f7c57, 0x867351][k]);
+  else out.setHex([0x786a51, 0x6e6049, 0x817258, 0x7b6d54][k]);
   return out;
 }
 /* Trail decay: a track is only information for as long as the ground that holds it
@@ -60508,7 +60509,19 @@ function updateFox(dt, dayF){
   for (const a of foxes){
   const active = dayF < 0.55 && !stormy;
   setAnimalScale(a, dt, active ? 1 : 0);
-  if (!active){ a.state = 'den'; a.t = 2; continue; }
+  if (!active){
+    a.state = 'den'; a.t = 2;
+    // sleep in the den: drift home during the day (invisible), so at dusk it is
+    // already at the mouth and simply walks out into the evening.
+    if (a.den){
+      const kk = 1 - Math.exp(-dt * 0.5);
+      a.g.position.x += (a.den.x - a.g.position.x) * kk;
+      a.g.position.z += (a.den.z - a.g.position.z) * kk;
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z);
+      a.g.rotation.y = angTo(a.g.rotation.y, a.den.yaw, 1 - Math.exp(-dt * 0.8));
+    }
+    continue;
+  }
   a.t -= dt;
   const pd = playerDist(a.g.position.x, a.g.position.z);
   if (a === hunt.fox && hunt.phase > 0){   /* T4: the hunt owns the fox */
@@ -60714,6 +60727,143 @@ function makeRabbit(x, z, seed){
   return a;
 }
 const rabbits = [ makeRabbit(-100, 40, 501), makeRabbit(-114, 2, 502), makeRabbit(-95, 16, 503), makeRabbit(-110, 48, 504) ];
+
+/* ============================================================
+   THE WARREN & THE FOX DEN — a dusk set-piece (flora/fauna, #9e)
+   ------------------------------------------------------------
+   A rabbit warren — a spoil-mound punched with several burrow
+   mouths — and, a short cast across the meadow, a fox den dug out
+   under a tangle of rock and root. The two are joined by worn runs:
+   rabbit trails out to the grazing, and a single fox line that comes
+   to rest a few metres short of the warren (a fox does not announce
+   itself at the door). A bolt scar — the torn earth where a rabbit
+   has thrown itself out of a hole away from the den — marks the
+   escape. Tracks are laid at build so the ground reads lived-in
+   before the animals wake; they then write their own over it. The
+   fox is tied to the den: it sleeps in it by day and emerges at dusk.
+   ============================================================ */
+const WARREN = { x: -105, z: 26 };
+const FOXDEN = { x: -98, z: 34 };
+{
+  const EARTH_D = 0x4a3a28, EARTH = 0x5c4a33, EARTH_L = 0x6f5b42;
+  const MOUTH = 0x110c08, ROCK = 0x6b6359, ROOT = 0x3a2e22, BONE = 0xc7bda0;
+  const cells = [];
+  const rnd = (a, b) => hash(a, b);
+  const outward = (x, z) => Math.atan2(x - WARREN.x, z - WARREN.z);
+
+  // --- the warren: a berm of excavated earth with a ring of burrow mouths ---
+  const holes = [
+    [-103.6, 27.4], [-106.6, 27.1], [-104.4, 23.9],
+    [-107.1, 24.9], [-102.5, 25.4],
+  ];
+  for (let i = 0; i < holes.length; i++){
+    const [hx, hz] = holes[i];
+    const fa = outward(hx, hz);
+    const fx = Math.sin(fa), fz = Math.cos(fa);
+    // spoil berm — a low mound, capped lighter where the sun hits
+    cells.push({ x: hx, z: hz, y: 0.15, sx: 2.2, sy: 0.5, sz: 2.2, ry: fa, color: EARTH });
+    cells.push({ x: hx, z: hz, y: 0.42, sx: 1.35, sy: 0.36, sz: 1.35, ry: fa, color: EARTH_L });
+    // the mouth: a dark rectangle cut into the berm face, leaning in
+    cells.push({ x: hx + fx*1.02, z: hz + fz*1.02, y: 0.26, sy: 0.52, sx: 0.82, sz: 0.55, ry: fa, rx: 0.14, color: MOUTH });
+    // a lip of fresh spoil kicked out of each mouth
+    for (let k = 0; k < 3; k++){
+      const sp = 0.55 + rnd(i*11 + k, 3) * 0.8;
+      cells.push({ x: hx + fx*(1.35 + sp) + (rnd(i, k+40) - 0.5) * 0.7,
+                  z: hz + fz*(1.35 + sp) + (rnd(i, k+50) - 0.5) * 0.7,
+                  y: 0.04 + rnd(k, i) * 0.11, sy: 0.16, sx: 0.45 + rnd(i, k) * 0.35, sz: 0.38 + rnd(k, i) * 0.3,
+                  ry: rnd(i*3 + k, 9) * 3, color: (k & 1) ? EARTH_L : EARTH });
+    }
+  }
+  // rabbit sign: scattered pellets across the warren yard
+  for (let k = 0; k < 40; k++){
+    const a = rnd(k, 11) * 6.283, r = 1.0 + rnd(k, 12) * 6.0;
+    cells.push({ x: WARREN.x + Math.cos(a) * r, z: WARREN.z + Math.sin(a) * r * 0.85,
+      y: 0.035 + rnd(k, 13) * 0.05, sy: 0.08, sx: 0.07, sz: 0.07, ry: rnd(k, 14) * 3, color: 0x382e1e });
+  }
+
+  // --- the fox den: a burrow under a collapsed rock-and-root tangle ---
+  const dfa = Math.atan2(WARREN.x - FOXDEN.x, WARREN.z - FOXDEN.z);   // mouth faces the warren, its hunting ground
+  const dfx = Math.sin(dfa), dfz = Math.cos(dfa);
+  // rock tangle over the chamber
+  for (let k = 0; k < 5; k++){
+    const a = dfa + (rnd(k, 101) - 0.5) * 2.6, r = 0.4 + rnd(k, 102) * 1.6;
+    cells.push({ x: FOXDEN.x + Math.cos(a) * r, z: FOXDEN.z + Math.sin(a) * r,
+      y: 0.25 + rnd(k, 103) * 0.5, sy: 0.5 + rnd(k, 104) * 0.6, sx: 0.8 + rnd(k, 105) * 1.2, sz: 0.7 + rnd(k, 106) * 1.1,
+      ry: rnd(k, 107) * 3, rz: (rnd(k, 108) - 0.5) * 0.5, color: k & 1 ? ROCK : 0x5c554c });
+  }
+  // roots clawing down over the mouth
+  for (let k = 0; k < 3; k++){
+    cells.push({ x: FOXDEN.x + dfx*(0.3 + k*0.5) + (rnd(k, 111) - 0.5) * 1.4, z: FOXDEN.z + dfz*(0.3 + k*0.5) + (rnd(k, 112) - 0.5) * 1.4,
+      y: 0.5 + rnd(k, 113) * 0.4, sy: 0.12, sx: 0.12, sz: 1.4 + rnd(k, 114) * 1.2,
+      ry: dfa + (rnd(k, 115) - 0.5) * 1.4, rx: 0.6 + rnd(k, 116) * 0.5, color: ROOT });
+  }
+  // the den mouth, facing the warren
+  cells.push({ x: FOXDEN.x + dfx*1.15, z: FOXDEN.z + dfz*1.15, y: 0.3, sy: 0.62, sx: 0.95, sz: 0.6, ry: dfa, rx: 0.16, color: MOUTH });
+  // fox midden: a few picked-clean bones by the door
+  for (let k = 0; k < 5; k++){
+    const a = dfa + (rnd(k, 121) - 0.5) * 1.2, r = 1.6 + rnd(k, 122) * 2.2;
+    cells.push({ x: FOXDEN.x + Math.cos(a) * r, z: FOXDEN.z + Math.sin(a) * r,
+      y: 0.05, sy: 0.06, sx: 0.06, sz: 0.35 + rnd(k, 123) * 0.4,
+      ry: rnd(k, 124) * 3, color: k & 1 ? BONE : 0xb6ac90 });
+  }
+
+  // --- worn runs: rabbit trails out from each hole to the grazing ---
+  for (let i = 0; i < holes.length; i++){
+    const [hx, hz] = holes[i];
+    let a = outward(hx, hz) + (rnd(i, 201) - 0.5) * 0.8;
+    let x = hx + Math.sin(a) * 1.5, z = hz + Math.cos(a) * 1.5;
+    for (let s = 0; s < 7; s++){
+      a += (rnd(i * 20 + s, 202) - 0.5) * 0.5;
+      x += Math.sin(a) * 1.1; z += Math.cos(a) * 1.1;
+      stampStep(x, z, a, 'rabbit');
+    }
+  }
+
+  // --- the fox line: a worn run from the den toward the warren, stopping short ---
+  {
+    let a = dfa, x = FOXDEN.x + Math.sin(a) * 1.7, z = FOXDEN.z + Math.cos(a) * 1.7;
+    const gap = Math.hypot(WARREN.x - FOXDEN.x, WARREN.z - FOXDEN.z) - 6.5;
+    for (let s = 0; s < 9 && s * 1.0 < gap; s++){
+      a = dfa + Math.sin(s * 0.5) * 0.35;
+      x += Math.sin(a) * 1.0; z += Math.cos(a) * 1.0;
+      stampStep(x, z, a, 'fox');
+    }
+  }
+
+  // --- the bolt scar: torn earth bursting out of the hole nearest the den ---
+  {
+    let bi = 0, bd = 1e9;
+    for (let i = 0; i < holes.length; i++){
+      const d = Math.hypot(holes[i][0] - FOXDEN.x, holes[i][1] - FOXDEN.z);
+      if (d < bd){ bd = d; bi = i; }
+    }
+    const [hx, hz] = holes[bi];
+    const ea = Math.atan2(hx - FOXDEN.x, hz - FOXDEN.z);   // escape runs directly away from the den
+    // the scar itself: a torn furrow of turned soil, ragged and low
+    for (let s = 0; s < 7; s++){
+      const t = 1.4 + s * 0.55, wob = (rnd(s, 301) - 0.5) * 0.5;
+      cells.push({ x: hx + Math.sin(ea) * t + Math.cos(ea) * wob, z: hz + Math.cos(ea) * t - Math.sin(ea) * wob,
+        y: 0.06 + rnd(s, 302) * 0.06, sy: 0.13, sx: 0.7 - s * 0.06, sz: 0.55,
+        ry: ea + (rnd(s, 303) - 0.5) * 0.4, color: (s & 1) ? EARTH_D : 0x533f2a });
+    }
+    // and a fan of rabbit prints thrown out with it
+    for (let s = 0; s < 8; s++){
+      const a = ea + (rnd(s, 311) - 0.5) * 0.9, t = 1.3 + s * 0.5;
+      stampStep(hx + Math.sin(a) * t, hz + Math.cos(a) * t, a, 'rabbit');
+    }
+  }
+
+  columns(cells, lamber(0xffffff));
+
+  // tie the rabbits to the warren — each makes its home at a hole
+  for (let i = 0; i < rabbits.length; i++){
+    const [hx, hz] = holes[i];
+    rabbits[i].x0 = hx; rabbits[i].z0 = hz;
+    rabbits[i].g.position.set(hx + (hash(i, 401) - 0.5) * 1.4, groundH(hx, hz), hz + (hash(i, 402) - 0.5) * 1.4);
+  }
+  // tie the second fox to the den: it sleeps there by day, emerges at dusk
+  if (foxes[1]) foxes[1].den = { x: FOXDEN.x + dfx * 0.2, z: FOXDEN.z + dfz * 0.2, yaw: dfa };
+}
 function updateRabbits(dt, dayF){
   for(let ri = 0; ri < rabbits.length; ri++){
   const a = rabbits[ri];
