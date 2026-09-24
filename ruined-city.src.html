@@ -2997,27 +2997,30 @@ const swings = [];   /* { g, phase, amp } — chains that swing in the wind */
   cells.push({ x: X, z: Z + D/2 + 0.04, y: 0, sy: 3.5, sx: W*0.6, sz: 0.1, color: MOSS_G[3] });
   columns(cells, lamber(0xffffff));
 
-  /* ---- playground (east/south of the school) ---- */
-  const PX = X + W/2 + 4, PZ = Z + 3;
-  /* cracked basketball court */
-  const court = new THREE.Mesh(new THREE.BoxGeometry(9, 0.12, 12), lamber(0x5a6a72));
-  court.position.set(PX + 5, 0.06, PZ); court.receiveShadow = true; scene.add(court);
-  /* court cracks + centre circle (flat quads) */
+  /* ---- playground — the school's own cleared north yard, set back off the road grid.
+     Was originally east/south and straddled the x=-40 avenue; the court sat half on
+     the tarmac. Now sits inside the school's r=20 reserve, clear of the x=-40 and
+     z=0 roads, on its own parcel abutting the school. ---- */
+  const CY = -60, CZ = -30;                    /* court centre */
+  /* cracked basketball court (long axis along x) */
+  const court = new THREE.Mesh(new THREE.BoxGeometry(11, 0.12, 9), lamber(0x5a6a72));
+  court.position.set(CY, 0.06, CZ); court.receiveShadow = true; scene.add(court);
+  /* court cracks + centre line (flat quads) */
   const crackCells = [];
-  crackCells.push({ x: PX + 5, z: PZ, y: 0.13, sy: 0.02, sx: 9.2, sz: 0.12, color: 0x3f4a50 });
-  crackCells.push({ x: PX + 3, z: PZ + 2, y: 0.13, sy: 0.02, sx: 0.12, sz: 6, color: 0x3f4a50 });
-  crackCells.push({ x: PX + 6.5, z: PZ - 2, y: 0.13, sy: 0.02, sx: 4, sz: 0.1, ry: 0.5, color: 0x3f4a50 });
+  crackCells.push({ x: CY, z: CZ, y: 0.13, sy: 0.02, sx: 11.2, sz: 0.12, color: 0x3f4a50 });
+  crackCells.push({ x: CY - 2, z: CZ + 2, y: 0.13, sy: 0.02, sx: 0.12, sz: 6, color: 0x3f4a50 });
+  crackCells.push({ x: CY + 3, z: CZ - 2, y: 0.13, sy: 0.02, sx: 4, sz: 0.1, ry: 0.5, color: 0x3f4a50 });
   columns(crackCells, lamber(0xffffff));
-  /* leaning hoop at the far end */
+  /* leaning hoop at the east end */
   const hoopCells = [];
-  hoopCells.push({ x: PX + 5, z: PZ + 5.6, y: 0, sy: 3.0, sx: 0.15, sz: 0.15, rz: 0.12, color: 0x4a4a42 });
-  hoopCells.push({ x: PX + 5, z: PZ + 5.2, y: 2.9, sy: 0.15, sx: 0.15, sz: 1.0, color: 0x4a4a42 });
-  hoopCells.push({ x: PX + 5, z: PZ + 4.9, y: 2.7, sy: 0.7, sx: 0.05, sz: 0.9, color: 0x7a7a70 });   /* net (faded) */
-  hoopCells.push({ x: PX + 5, z: PZ + 4.8, y: 3.0, sy: 0.5, sx: 0.9, sz: 0.06, color: 0x9a3a2a });   /* rim */
+  hoopCells.push({ x: CY + 5.1, z: CZ + 0.2, y: 0, sy: 3.0, sx: 0.15, sz: 0.15, rz: 0.12, color: 0x4a4a42 });
+  hoopCells.push({ x: CY + 4.9, z: CZ - 0.2, y: 2.9, sy: 0.15, sx: 1.0, sz: 0.15, color: 0x4a4a42 });
+  hoopCells.push({ x: CY + 4.6, z: CZ + 0.1, y: 2.7, sy: 0.7, sx: 0.9, sz: 0.05, color: 0x7a7a70 });   /* net (faded) */
+  hoopCells.push({ x: CY + 4.5, z: CZ + 0.4, y: 3.0, sy: 0.5, sx: 0.06, sz: 0.9, color: 0x9a3a2a });   /* rim */
   columns(hoopCells, lamber(0xffffff));
 
-  /* swing set: A-frame + top bar (static) */
-  const SX = X + W/2 + 4, SZ = Z - 4;
+  /* swing set: A-frame + top bar (static) — west of the court, same yard */
+  const SX = -70, SZ = -30;
   const frameCells = [];
   for(const s of [-1, 1]){
     frameCells.push({ x: SX + s*1.6, z: SZ - 1.2, y: 0, sy: 2.6, sx: 0.15, sz: 0.15, rx: -0.3, color: 0x6a6a62 });
