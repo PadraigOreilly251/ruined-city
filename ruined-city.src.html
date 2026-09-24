@@ -803,14 +803,16 @@ const serpent = (() => {
     const cv = document.createElement('canvas'); cv.width = cv.height = 256;
     const g = cv.getContext('2d');
     g.fillStyle = cBase; g.fillRect(0, 0, 256, 256);
-    g.strokeStyle = cScale; g.lineWidth = 3; g.lineCap = 'round';
-    const cols = 7, sw = 256 / cols;
-    for (let r = 0; r < 9; r++) for (let cc = 0; cc <= cols; cc++){
-      const x = cc * sw - (r % 2 ? sw / 2 : 0) + sw * 0.5;
-      g.beginPath(); g.arc(x, r * 30 - 6, sw * 0.55, Math.PI * 0.2, Math.PI * 0.8); g.stroke();
+    g.strokeStyle = cScale; g.lineWidth = 1.6; g.lineCap = 'round';
+    /* tight keeled scale cups, staggered rows — reads as snake hide, not the wide
+       artichoke-leaf scallops the old 7-across arcs looked like on a rounded hump */
+    const cols = 16, rows = 18, sw = 256 / cols, sh = 256 / rows;
+    for (let r = 0; r <= rows; r++) for (let cc = 0; cc <= cols; cc++){
+      const x = cc * sw + (r % 2 ? sw / 2 : 0);
+      g.beginPath(); g.arc(x, r * sh, sw * 0.62, Math.PI * 0.12, Math.PI * 0.88); g.stroke();
     }
-    g.globalAlpha = 0.2; g.fillStyle = cBlotch;
-    for (let i = 0; i < 16; i++){
+    g.globalAlpha = 0.16; g.fillStyle = cBlotch;
+    for (let i = 0; i < 14; i++){
       g.beginPath();
       g.ellipse(hash(i, 11) * 256, hash(i, 23) * 256, 5 + hash(i, 31) * 15, 4 + hash(i, 41) * 9, hash(i, 51) * 3, 0, 6.28);
       g.fill();
@@ -820,8 +822,8 @@ const serpent = (() => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, 1); t.anisotropy = 4;
     return t;
   }
-  const bodyMat = new THREE.MeshLambertMaterial({ map: scaleTex('#2f4d42', '#43685c', '#1d332c', 2.5), emissive: 0x0c1e17 });
-  const headMat = new THREE.MeshLambertMaterial({ map: scaleTex('#34564a', '#4b7463', '#22392f', 1.5), emissive: 0x0e231b });
+  const bodyMat = new THREE.MeshLambertMaterial({ map: scaleTex('#1c2e28', '#31473f', '#0f1e19', 3.5), emissive: 0x071009 });
+  const headMat = new THREE.MeshLambertMaterial({ map: scaleTex('#223a32', '#3a574d', '#12241e', 2.0), emissive: 0x0a1a13 });
   const finMat  = new THREE.MeshLambertMaterial({ color: 0x2b2115, emissive: 0x120d07, side: THREE.DoubleSide });
   const eyeMat  = new THREE.MeshBasicMaterial({ color: 0xd6ffe9 });
   const glowMat = new THREE.MeshBasicMaterial({ color: 0x5fd9bd });
@@ -961,10 +963,22 @@ const serpent = (() => {
       }
       acc += d; prev = p;
     }
+    /* head/neck break-surface term: the crest peaks on the shoulder (t≈0.12–0.24),
+       which left the HEAD ~1 m under the water through the whole breach — so the
+       glowing eyes and the row of jaw lights, the only legible cue against the dark
+       night sea, never showed (and the head-crossing splash could never fire).
+       frontRaise tapers 1→0 across the first ~4 segments so the back is untouched;
+       headCurve brings the front clear (~2.4 m proud) across the rise + hold, then
+       releases it as the wave runs down to the tail. */
+    const frontRaise = t => 1 - ss(clamp01((t - 0.02) / 0.22));
+    const headCurve = (state === 'surface')
+      ? ss(clamp01(surfT / 0.13)) * (1 - ss(clamp01((surfT - 0.42) / 0.15)))
+      : 0;
+    const headAmp = 4.0 * headCurve;
     for (let i = 0; i < SEGS; i++){
       const t = i / (SEGS - 1);
       const base = i < trail.length ? trail[i] : pathPts[pathPts.length - 1];
-      const lift = amp * crestFn(t, c);
+      const lift = amp * crestFn(t, c) + headAmp * frontRaise(t);
       const a2 = Math.max(0, i - 1), b2 = Math.min(SEGS - 1, i + 1);
       const pa = (a2 < trail.length ? trail[a2] : pathPts[pathPts.length - 1]);
       const pb = (b2 < trail.length ? trail[b2] : pathPts[pathPts.length - 1]);
@@ -993,11 +1007,11 @@ const serpent = (() => {
       f.m.rotateZ(f.side * 0.55);
     }
     group.visible = headG.visible = (state === 'surface');   /* fully hidden when under the water — no daytime iceberg */
-    if (justBroke){ splash(pts[0].x, pts[0].z, 16, true); justBroke = false; }
-    if (state === 'surface' && !crestDone && surfT > 0.5){ crestDone = true; splash(pts[13].x, pts[13].z, 18, true); }
+    if (justBroke){ splash(pts[0].x, pts[0].z, 5, true); justBroke = false; }
+    if (state === 'surface' && !crestDone && surfT > 0.5){ crestDone = true; splash(pts[13].x, pts[13].z, 6, true); }
     const headY = pts[0].y;
-    if (headY > WATER_Y && !prevHead) splash(pts[0].x, pts[0].z, 13, true);
-    else if (headY < WATER_Y && prevHead) splash(pts[0].x, pts[0].z, 15, true);
+    if (headY > WATER_Y && !prevHead) splash(pts[0].x, pts[0].z, 4, true);
+    else if (headY < WATER_Y && prevHead) splash(pts[0].x, pts[0].z, 5, true);
     prevHead = headY > WATER_Y;
   }
   return { update,
