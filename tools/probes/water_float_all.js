@@ -15,6 +15,7 @@
   }
   scene.traverse(o => {
     if (o.name === '__tarnice__' || o.name === '__tarncrack__') return;
+    for (let a = o; a; a = a.parent) if (a.userData && a.userData.waterLife) return;   /* lily pads/scum are meant to float */
     if (o.isInstancedMesh){
       const m = new THREE.Matrix4(), v = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
       for (let i = 0; i < o.count; i++){

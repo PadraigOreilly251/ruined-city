@@ -7,6 +7,8 @@
   let n = 0, samp = [];
   scene.traverse(o => {
     if (!o.isInstancedMesh || o.name === '__tarnice__' || o.name === '__tarncrack__') return;
+    /* living water plants (lily pads/scum) float on purpose — not debris */
+    for (let a = o; a; a = a.parent) if (a.userData && a.userData.waterLife) return;
     for (let i = 0; i < o.count; i++){
       o.getMatrixAt(i, m); m.decompose(v, q, s); if (s.x < 1e-4) continue;
       const ww = window.waterHalfWidth(v.z);
