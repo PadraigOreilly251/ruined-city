@@ -62751,6 +62751,47 @@ function updateFireflies(dt, dayF){
   pts.geometry.attributes.color.needsUpdate = true;
 }
 
+/* ---------- midge swarm over the tarn at dusk ---------- */
+/* A dense column of tiny dark specks rising and swirling off the standing water,
+   at its thickest in the evening glassing hour, just before the bats come to feed. */
+const MIDGE_N = 460;
+let midgeMat, midgePos;
+{
+  midgePos = new Float32Array(MIDGE_N * 3);
+  const meta = [];
+  for (let i = 0; i < MIDGE_N; i++){
+    const a = Math.random() * 6.283, rr = Math.sqrt(Math.random()) * TARN.r * 0.5;
+    meta.push({ cx: Math.cos(a) * rr, cz: Math.sin(a) * rr, y: WATER_Y + Math.random() * 9, rise: 0.5 + Math.random() * 1.1, ph: Math.random() * 6.28, sw: 0.6 + Math.random() * 1.6 });
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(midgePos, 3));
+  midgeMat = new THREE.PointsMaterial({ color: 0x8f97a0, size: 0.24, transparent: true, opacity: 0, sizeAttenuation: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const pts = new THREE.Points(g, midgeMat);
+  pts.frustumCulled = false; pts.renderOrder = 4;
+  scene.add(pts); pts.userData.meta = meta;
+  window._midges = pts;
+}
+function updateMidges(dt, dayF){
+  const pts = window._midges;
+  const warm = season === 0 || season === 1;
+  const duskBell = Math.max(0, 1 - Math.abs(dayF - 0.3) / 0.22);   /* peaks in the evening transition */
+  const target = (warm ? duskBell : 0) * 0.85;
+  midgeMat.opacity += (target - midgeMat.opacity) * (1 - Math.exp(-dt * 1.2));
+  if (midgeMat.opacity < 0.02){ pts.visible = false; return; }
+  pts.visible = true;
+  const meta = pts.userData.meta;
+  for (let i = 0; i < MIDGE_N; i++){
+    const m = meta[i];
+    m.y += m.rise * dt;
+    if (m.y > WATER_Y + 10){ m.y = WATER_Y + 0.15; const a = Math.random() * 6.283, rr = Math.sqrt(Math.random()) * TARN.r * 0.5; m.cx = Math.cos(a) * rr; m.cz = Math.sin(a) * rr; }
+    const w = 0.9 + m.sw * 0.5;
+    midgePos[i*3]   = TARN.x + m.cx + Math.sin(tSim * w + m.ph) * (0.7 + m.sw * 0.6);
+    midgePos[i*3+1] = m.y + Math.sin(tSim * (1.5 + m.sw) + m.ph * 2) * 0.4;
+    midgePos[i*3+2] = TARN.z + m.cz + Math.cos(tSim * w * 0.85 + m.ph) * (0.7 + m.sw * 0.6);
+  }
+  pts.geometry.attributes.position.needsUpdate = true;
+}
+
 /* ============================================================
    (bats are defined above — dusk colonies over the keep + Old Ring)
    ============================================================ */
@@ -63232,6 +63273,7 @@ function stepFrame(dt){
   updateGeese(dt, dayF);
   updateBats(dt, dayF);
   updateFireflies(dt, dayF);
+  updateMidges(dt, dayF);
   updatePollinators(dt, dayF);
   updateDragonflies(dt, dayF);
 }
