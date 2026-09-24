@@ -62528,40 +62528,95 @@ function updateGulls(dt, dayF){
   }
 }
 
-/* ---------- bats (night, over the streets) ---------- */
-const bats = [];
-{
-  const mat = lamber(0x1e2126);
-  for(let i = 0; i < 4; i++){
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(B(0.09, 0.05, 0.16), mat); g.add(body);
-    const wGeoL = new THREE.BoxGeometry(0.3, 0.01, 0.14); wGeoL.translate(-0.15, 0, 0);
-    const wGeoR = new THREE.BoxGeometry(0.3, 0.01, 0.14); wGeoR.translate(0.15, 0, 0);
-    const wl = new THREE.Mesh(wGeoL, mat), wr = new THREE.Mesh(wGeoR, mat);
-    g.add(wl); g.add(wr);
-    scene.add(g);
-    bats.push({ g, wl, wr, cx: (hash(i, 61) - 0.5) * 80, cz: (hash(i, 62) - 0.5) * 80,
-      rx: 6 + hash(i, 63) * 10, rz: 5 + hash(i, 64) * 9, h: 7 + hash(i, 65) * 7,
-      speed: 0.5 + hash(i, 66) * 0.5, ph: hash(i, 67) * 6.28,
-      flapPh: hash(i, 68), flapRate: 5.5 + hash(i, 69) * 2 });
-    NIGHT_ANIMALS.push({ g, night: true });
-  }
+/* ============================================================
+   BATS — dusk flyers over the keep and the Old Ring (fauna)
+   ------------------------------------------------------------
+   Two small colonies, and nowhere else: one roosts in the ruined
+   watchtower on the cliff, one under the mossy menhirs of the stone
+   circle. They are crepuscular — asleep through the day, out at dusk
+   to hunt the midges along the cliff line, and up all night until the
+   light drives them back to the cracks. Hibernation takes the whole
+   colony down in winter, and hard rain keeps them roosted.
+   A bat is not a bird: no soaring, no glide. It flickers — a high,
+   shallow wingbeat and an erratic, stuttering track that turns on a
+   sixpence, looping back over the same ground looking for food.
+   ============================================================ */
+const BAT_HOMES = [
+  { x: 199, z: 268, r: 5.5, baseY: groundH(199, 268) + 8.0, amp: 2.2, name: 'the keep' },
+  { x: 283, z: 247, r: 11.0, baseY: groundH(283, 247) + 4.2, amp: 1.7, name: 'the ring' }
+];
+/* a swept membrane wing: span along x, chord along z, pointed tip, scalloped trailing edge */
+function batWingGeo(sx){
+  const g = new THREE.BufferGeometry();
+  const v = [
+    0, 0, 0.12, 0.54 * sx, 0, -0.05, 0.30 * sx, 0, -0.22, 0, 0, -0.12
+  ];
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.computeVertexNormals();
+  return g;
 }
+const bats = [];
+function makeBat(seed, home, homeIdx){
+  const g = new THREE.Group();
+  const furC = lamber(0x2b2620), membrane = new THREE.MeshLambertMaterial({ color: 0x201c19, side: THREE.DoubleSide, transparent: true, opacity: 0.96 });
+  const body = new THREE.Mesh(B(0.1, 0.11, 0.26), furC); body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(B(0.1, 0.09, 0.1), furC); head.position.set(0, 0.02, 0.16); g.add(head);
+  const snout = new THREE.Mesh(B(0.05, 0.045, 0.06), furC); snout.position.set(0, 0.0, 0.23); g.add(snout);
+  const earGeo = B(0.018, 0.085, 0.03);
+  const earL = new THREE.Mesh(earGeo, membrane); earL.position.set(-0.05, 0.09, 0.13); earL.rotation.z = 0.5; earL.rotation.x = -0.2; g.add(earL);
+  const earR = new THREE.Mesh(earGeo, membrane); earR.position.set(0.05, 0.09, 0.13); earR.rotation.z = -0.5; earR.rotation.x = -0.2; g.add(earR);
+  const wl = new THREE.Mesh(batWingGeo(-1), membrane); wl.position.set(-0.04, 0.02, 0); g.add(wl);
+  const wr = new THREE.Mesh(batWingGeo(1), membrane); wr.position.set(0.04, 0.02, 0); g.add(wr);
+  const tail = new THREE.Mesh(B(0.12, 0.01, 0.12), membrane); tail.position.set(0, 0, -0.18); g.add(tail);
+  scene.add(g);
+  const b = { g, wl, wr, seed, home, homeIdx, ph: hash(seed, 1) * 6.283,
+    heading: hash(seed, 2) * 6.283, speed: 2.3 + hash(seed, 3) * 1.3,
+    w1: 0.7 + hash(seed, 4) * 0.9, w2: 1.9 + hash(seed, 5) * 1.7,
+    v1: 0.9 + hash(seed, 6) * 1.2, v2: 2.3 + hash(seed, 7) * 1.5,
+    dip: 0, dipT: 2 + hash(seed, 8) * 5, faceYaw: 0, bank: 0 };
+  g.position.set(home.x + (hash(seed, 9) - 0.5) * home.r, home.baseY, home.z + (hash(seed, 10) - 0.5) * home.r);
+  return b;
+}
+for (let h = 0; h < BAT_HOMES.length; h++){
+  const per = h === 0 ? 5 : 4;   /* a few more over the keep than the ring */
+  for (let i = 0; i < per; i++) bats.push(makeBat(7300 + h * 53 + i * 7, BAT_HOMES[h], h));
+}
+window._bats = bats;
 function updateBats(dt, dayF){
-  const active = dayF < 0.4;
-  for(const b of bats){
-    setAnimalScale(b, dt, active ? 1 : 0);
+  const rain = (typeof wx !== 'undefined') ? (wx.rain || 0) : 0;
+  const active = (dayF < 0.5 && season !== 3 && rain < 0.45) ? 1 : 0;   /* crepuscular; hibernate in winter; roost out in hard rain */
+  for (const b of bats){
+    setAnimalScale(b, dt, active);
     if (!active) continue;
-    b.ph += b.speed * dt;
-    b.g.position.set(
-      b.cx + Math.cos(b.ph) * b.rx,
-      b.h + Math.sin(b.ph * 3.1) * 1.5,
-      b.cz + Math.sin(b.ph) * b.rz
-    );
-    orientBird(b, dt, 0.7, 0.5);
-    /* no gliding — bats never stop flapping, just slower when climbing */
-    const f = flapWave(tSim, b.flapRate, b.flapPh) * 0.9;
-    wingPose(b.wl, b.wr, f, 0.15);
+    const a = b.home;
+    // erratic heading: two wobbles summed, so the track never settles into a circle
+    b.heading += Math.sin(tSim * b.w1 + b.ph) * dt * 1.6 + Math.sin(tSim * b.w2 + b.ph * 2) * dt * 2.4;
+    const ws = b.speed * (0.7 + 0.5 * Math.sin(tSim * b.v1 + b.ph));
+    let vx = Math.cos(b.heading) * ws, vz = Math.sin(b.heading) * ws;
+    // home bias: drift back before it wanders off the keep / the ring
+    const hx = a.x - b.g.position.x, hz = a.z - b.g.position.z;
+    const hd = Math.hypot(hx, hz) || 1;
+    if (hd > a.r * 0.55){ const k = (hd - a.r * 0.55) * 1.1; vx += (hx / hd) * k; vz += (hz / hd) * k; }
+    b.g.position.x += vx * dt;
+    b.g.position.z += vz * dt;
+    // height: two-band wobble + occasional sharp dip-hunt
+    b.g.position.y = a.baseY + Math.sin(tSim * b.v2 + b.ph * 3) * a.amp + Math.sin(tSim * b.w1 * 2 + b.ph) * a.amp * 0.35;
+    b.dipT -= dt;
+    if (b.dipT <= 0){ b.dip = 1; b.dipT = 2.5 + Math.random() * 5; }
+    if (b.dip > 0){ b.dip -= dt / 0.6; const d = Math.max(0, b.dip); b.g.position.y -= Math.sin(d * Math.PI) * 1.7; }
+    // face the velocity; bank into the turn
+    const va = Math.atan2(vx, vz);
+    let dd = va - b.faceYaw; dd = Math.atan2(Math.sin(dd), Math.cos(dd));
+    b.faceYaw += dd * (1 - Math.exp(-dt * 9));
+    b.bank += (clampN(dd * 2.2, -0.7, 0.7) - b.bank) * (1 - Math.exp(-dt * 4));
+    b.g.rotation.y = b.faceYaw;
+    b.g.rotation.z = b.bank;
+    b.g.rotation.x = (b.dip > 0 ? Math.sin(Math.max(0, b.dip) * Math.PI) * 0.5 : 0) + Math.sin(tSim * b.v2 + b.ph) * 0.08;
+    // high, shallow, never-resting wingbeat (quicker on a dive)
+    const rate = 9 + Math.sin(tSim * b.w1 + b.ph) * 1.6 + (b.dip > 0 ? 3 : 0);
+    const f = flapWave(tSim, rate, b.ph);
+    wingPose(b.wl, b.wr, f, 0.08);
   }
 }
 
@@ -62616,6 +62671,10 @@ function updateFireflies(dt, dayF){
   pts.geometry.attributes.position.needsUpdate = true;
   pts.geometry.attributes.color.needsUpdate = true;
 }
+
+/* ============================================================
+   (bats are defined above — dusk colonies over the keep + Old Ring)
+   ============================================================ */
 
 /* ---------- butterflies + bees (day) ---------- */
 const pollinators = [];
