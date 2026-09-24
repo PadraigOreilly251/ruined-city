@@ -56520,14 +56520,27 @@ const seaStacks = [];
     m.castShadow = true; m.receiveShadow = true;
     scene.add(m);
     st.top = base + st.h + 0.15;
-    /* foam ring where the water laps the rock */
-    const fr = new THREE.Mesh(new THREE.RingGeometry(st.r + 0.25, st.r + 1.15, 22),
-      new THREE.MeshBasicMaterial({ color: 0xdfe8ea, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide }));
-    fr.rotation.x = -Math.PI / 2;
-    fr.position.set(st.x, WATER_Y + 0.05, st.z);
-    fr.renderOrder = 2;
-    scene.add(fr);
-    seaStacks.push({ x: st.x, z: st.z, top: st.top, r: st.r, foam: fr, ph: si * 2.1 });
+    /* Foam collar hugging the rock base, plus concentric ripples radiating outward.
+       Was a single hard-edged annulus floating at a fixed radius with a gap off the
+       lumpy rock — read as a painted halo, not water. Now: a soft collar that
+       overlaps the base (no gap) + three thin rings that continuously travel
+       outward and fade, so the water reads as lapping/rippling around each stack. */
+    const foamMat = () => new THREE.MeshBasicMaterial({ color: 0xe6efee, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide });
+    const collar = new THREE.Mesh(new THREE.RingGeometry(st.r * 0.86, st.r * 1.55, 28), foamMat());
+    collar.rotation.x = -Math.PI / 2;
+    collar.position.set(st.x, WATER_Y + 0.06, st.z);
+    collar.renderOrder = 2;
+    scene.add(collar);
+    const ripples = [];
+    for (let k = 0; k < 3; k++){
+      const rm = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.1, 30), foamMat());
+      rm.rotation.x = -Math.PI / 2;
+      rm.position.set(st.x, WATER_Y + 0.055, st.z);
+      rm.renderOrder = 2;
+      scene.add(rm);
+      ripples.push({ m: rm, ph: k / 3 + hash(si * 7 + k, 420) * 0.12 });
+    }
+    seaStacks.push({ x: st.x, z: st.z, top: st.top, r: st.r, foam: collar, ripples, ph: si * 2.1 });
   });
 }
 
@@ -63372,11 +63385,18 @@ function stepFrame(dt){
       g.m.material.color.set(0xfff0c8).lerp(cGlintNight, nightFNow);
       g.m.material.opacity = (dayF * 0.20 + nightFNow * 0.09) * fl * (1 - wx.dim * 0.6) * (1 - wx.snow * 0.8);
     }
-    /* foam rings breathing around the sea stacks */
+    /* foam collar + expanding concentric ripples around each sea stack */
     for(const s of seaStacks){
-      s.foam.material.opacity = 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(tSim * 0.9 + s.ph));
-      const fsc = 1 + 0.05 * Math.sin(tSim * 0.9 + s.ph);
-      s.foam.scale.set(fsc, fsc, 1);
+      const wob = 0.5 + 0.5 * Math.sin(tSim * 0.9 + s.ph);
+      s.foam.material.opacity = 0.11 + 0.06 * wob;
+      const csc = 1 + 0.03 * Math.sin(tSim * 0.9 + s.ph);
+      s.foam.scale.set(csc, csc, 1);
+      if (s.ripples) for(const rp of s.ripples){
+        const tt = (tSim * 0.32 + rp.ph) % 1;          // 0→1 cycle (~3.1s)
+        const rr = s.r * (1.35 + tt * 1.75);           // crest travels outward
+        rp.m.scale.set(rr, rr, 1);
+        rp.m.material.opacity = Math.sin(tt * Math.PI) * 0.15;   // rise then fade
+      }
     }
   }
   /* town-hall flag: ragged flutter, stronger in the wind */
