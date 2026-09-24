@@ -1999,12 +1999,14 @@ function makeBoat(seed, o){
 const seaStacks = [];
 {
   const sites = [
-    { z: 246, off: 13, r: 3.1, h: 9 },    /* the squat one */
-    { z: 236, off: 17, r: 2.5, h: 15 },   /* the tall column — stands above the sea notch */
-    { z: 222, off: 21, r: 2.2, h: 5.5 },  /* the low slab */
+    { z: 246, off: 8,  r: 3.1, h: 9 },    /* the squat one — ~8 m off the near shore */
+    { z: 236, off: 12, r: 2.5, h: 15 },   /* the tall column — hero stack, above the sea notch */
+    { z: 222, off: 6,  r: 2.2, h: 5.5 },  /* the low slab — breaks the surface */
   ];
   sites.forEach((st, si) => {
-    st.x = waterCenterX(st.z) + waterHalfWidth(st.z) + st.off;
+    /* place OFFSHORE (into the water), not inland: subtract off from the near-shore water line.
+       was `+ st.off`, which landed the stacks 8-21 m up on the rising beach/cliff (buried). */
+    st.x = waterCenterX(st.z) + waterHalfWidth(st.z) - st.off;
     const base = WATER_Y - 1.3;
     const geo = new THREE.CylinderGeometry(st.r * 0.62, st.r, st.h, 9, 6);
     const pos = geo.attributes.position;
