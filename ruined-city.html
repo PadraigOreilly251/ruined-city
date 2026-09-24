@@ -60903,6 +60903,181 @@ makeHeron(7100, wadingSpot(2.1));
 makeHeron(7300, wadingSpot(4.6));
 window._herons = herons;
 
+/* ============================================================
+   FROGS & FROGSPAWN — the tarn's shallow chorus (flora/fauna)
+   ------------------------------------------------------------
+   Just under the surface of the shallow reed-line sits the spawn:
+   clumps of clear jelly studded with dark eggs, wound around where
+   the water is barely a hand deep and still. The frogs drowse at the
+   water's edge by day and come alive at dusk — a hop, a plop, then
+   the chorus, throat sacs puffing under the dark. Cold ends it: the
+   spawn lies under the ice with the pads and the frogs are gone.
+   ============================================================ */
+const FXB = (a, b, c) => new THREE.BoxGeometry(a, b, c);
+/* a very-shallow spot at the reed-line, shallower than the heron wade ring */
+function spawnSpot(angle){
+  const cx = TARN.x, cz = TARN.z;
+  for (let r = 9.4; r <= 15.5; r += 0.3){
+    const x = cx + Math.cos(angle) * r, z = cz + Math.sin(angle) * 1.05 * r;
+    const depth = WY - groundH(x, z);
+    if (depth > 0.04 && depth < 0.34) return { x, z, r, depth };
+  }
+  return null;
+}
+/* the spawn itself: static gel clumps with eggs, in the shallows */
+let tarnSpawn = null;
+{
+  const gelCells = [], eggCells = [];
+  for (let s = 0; s < 9; s++){
+    const sp = spawnSpot(hash(s, 900) * 6.283);
+    if (!sp) continue;
+    const nGel = 4 + (hash(s, 901) * 4 | 0);
+    for (let i = 0; i < nGel; i++){
+      const a2 = hash(s * 13 + i, 902) * 6.283, rr = hash(s * 13 + i, 903) * 0.5;
+      gelCells.push({ x: sp.x + Math.cos(a2) * rr, z: sp.z + Math.sin(a2) * rr * 1.1,
+        sc: 0.18 + hash(s * 13 + i, 904) * 0.22, ry: hash(s * 13 + i, 905) * 3 });
+    }
+    const nEgg = 7 + (hash(s, 906) * 8 | 0);
+    for (let i = 0; i < nEgg; i++){
+      const a2 = hash(s * 17 + i, 907) * 6.283, rr = hash(s * 17 + i, 908) * 0.55;
+      eggCells.push({ x: sp.x + Math.cos(a2) * rr, z: sp.z + Math.sin(a2) * rr * 1.1 });
+    }
+  }
+  if (gelCells.length){
+    const grp = new THREE.Group();
+    grp.name = 'FROGSPAWN_GRP';
+    grp.userData.waterLife = true;                 /* the cull must leave the spawn alone */
+    const gelMat = new THREE.MeshLambertMaterial({ color: 0xbfe0c0, transparent: true, opacity: 0.5, depthWrite: false });
+    const gim = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 8, 6), gelMat, gelCells.length);
+    const m = new THREE.Matrix4(), p = new THREE.Vector3(), sv = new THREE.Vector3(), q = new THREE.Quaternion();
+    gelCells.forEach((c, i) => {
+      p.set(c.x, WATER_Y - 0.06, c.z); sv.set(c.sc * 1.6, c.sc * 0.6, c.sc * 1.6);
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), c.ry); m.compose(p, q, sv); gim.setMatrixAt(i, m);
+    });
+    gim.instanceMatrix.needsUpdate = true; grp.add(gim);
+    const eim = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 6, 5), new THREE.MeshLambertMaterial({ color: 0x1a1420 }), eggCells.length);
+    eggCells.forEach((c, i) => {
+      p.set(c.x, WATER_Y - 0.08, c.z); sv.set(1, 1, 1); q.identity(); m.compose(p, q, sv); eim.setMatrixAt(i, m);
+    });
+    eim.instanceMatrix.needsUpdate = true; grp.add(eim);
+    scene.add(grp); tarnSpawn = grp;
+  }
+}
+/* the frogs: squat voxel bodies that drowse by day and croak by night */
+const frogs = [];
+function makeFrog(seed, spot){
+  const g = new THREE.Group();
+  const hue = hash(seed, 910);
+  const bc = new THREE.Color(0x4f6a3a).offsetHSL((hue - 0.5) * 0.06, (hue - 0.5) * 0.1, (hash(seed, 911) - 0.5) * 0.12);
+  const M = lamber(bc.getHex()), Md = lamber(bc.clone().multiplyScalar(0.8).getHex()), Mb = lamber(bc.clone().multiplyScalar(1.18).getHex());
+  const body = new THREE.Mesh(FXB(0.30, 0.18, 0.34), M); body.position.y = 0.11; body.castShadow = true; g.add(body);
+  const belly = new THREE.Mesh(FXB(0.26, 0.05, 0.30), Mb); belly.position.set(0, 0.04, 0.01); g.add(belly);
+  const head = new THREE.Group(); head.position.set(0, 0.15, 0.16);
+  const skull = new THREE.Mesh(FXB(0.26, 0.12, 0.16), M); head.add(skull);
+  const jaw = new THREE.Mesh(FXB(0.22, 0.03, 0.12), Mb); jaw.position.set(0, -0.055, 0.03); head.add(jaw);
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x2a1e0a, emissive: 0xffd88a, emissiveIntensity: 0 });
+  const whites = lamber(0xd9cf9a); const eyes = [];
+  for (const s of [-1, 1]){
+    const bump = new THREE.Group(); bump.position.set(s * 0.085, 0.075, 0.01);
+    bump.add(new THREE.Mesh(FXB(0.07, 0.06, 0.06), whites));
+    const pup = new THREE.Mesh(FXB(0.04, 0.05, 0.03), eyeM); pup.position.set(0, 0.01, 0.035); bump.add(pup);
+    eyes.push(bump); head.add(bump);
+  }
+  const throat = new THREE.Mesh(FXB(0.16, 0.06, 0.12), Md); throat.position.set(0, -0.02, -0.02); head.add(throat);
+  g.add(head);
+  const hind = [];
+  for (const s of [-1, 1]){
+    const thigh = new THREE.Mesh(FXB(0.10, 0.13, 0.20), Md); thigh.position.set(s * 0.15, 0.11, -0.08);
+    const foot = new THREE.Mesh(FXB(0.11, 0.03, 0.16), Md); foot.position.set(s * 0.16, 0.03, 0.02); hind.push({ thigh, foot }); g.add(thigh); g.add(foot);
+  }
+  for (const s of [-1, 1]){ const l = new THREE.Mesh(FXB(0.05, 0.09, 0.05), Md); l.position.set(s * 0.11, 0.05, 0.10); g.add(l); }
+  g.position.set(spot.x, Math.max(groundH(spot.x, spot.z), WY - 0.22), spot.z);
+  g.rotation.y = Math.atan2(TARN.x - spot.x, TARN.z - spot.z);   /* face the open water */
+  scene.add(g);
+  return { g, body, head, throat, hind, eyeM, seed, phase: hash(seed, 1) * 6.28,
+    x0: spot.x, z0: spot.z, depth: spot.depth, state: 'drowse', t: 1 + Math.random() * 3, croak: 0, cd: 1 + Math.random() * 5 };
+}
+for (let i = 0; i < 6; i++){
+  const sp = spawnSpot(hash(i, 930 + i) * 6.283);
+  if (sp) frogs.push(makeFrog(950 + i * 7, sp));
+}
+window._frogs = frogs;
+
+function updateFrogs(dt, dayF){
+  const nightF = 1 - dayF;
+  const winter = season === 3;
+  const present = winter ? 0 : 1;                 /* frogs gone in winter */
+  if (tarnSpawn) tarnSpawn.visible = !winter && tarnFreeze < 0.12;
+  for (const f of frogs){
+    const pd = playerDist(f.g.position.x, f.g.position.z);
+    setAnimalScale(f, dt, present);
+    f.eyeM.emissiveIntensity = Math.max(0, 0.5 - dayF) * 1.2 * Math.max(0, 1 - pd / 16);
+    f.t -= dt;
+    if (f.croak > 0) f.croak -= dt;
+    if (f.cd > 0) f.cd -= dt;
+    if (f.state === 'hop'){
+      const hop = f.hop;
+      if (!hop){ f.state = 'drowse'; f.t = 1.5 + Math.random() * 4; continue; }
+      hop.t += dt;
+      const p = clamp01(hop.t / hop.dur);
+      const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      f.g.position.x = hop.fx + (hop.tx - hop.fx) * ease;
+      f.g.position.z = hop.fz + (hop.tz - hop.fz) * ease;
+      f.g.position.y = hop.fy + Math.sin(p * Math.PI) * hop.arc;
+      for (const h of f.hind){ h.thigh.rotation.x = -0.4; h.foot.rotation.x = 0.3; }
+      if (p >= 1){ f.state = 'drowse'; f.t = 1.5 + Math.random() * 4; f.depth = WY - groundH(f.g.position.x, f.g.position.z); f.hop = null; }
+    } else {
+      const breath = Math.sin(tSim * 1.4 + f.phase) * 0.5 + 0.5;
+      f.body.scale.y = 1 + breath * 0.05;
+      if (f.t <= 0){
+        const r = Math.random();
+        const active = nightF > 0.35 && wx.rain < 0.4;
+        if (active && r < 0.5){
+          const na = f.g.rotation.y + (Math.random() - 0.5) * 1.6, d = 0.8 + Math.random() * 1.4;
+          const nx = f.g.position.x + Math.sin(na) * d, nz = f.g.position.z + Math.cos(na) * d;
+          const nd = WY - groundH(nx, nz);
+          if (nd > 0.02 && nd < 0.5){
+            f.hop = { t: 0, dur: 0.42 + Math.random() * 0.2, arc: 0.35 + Math.random() * 0.35,
+              fx: f.g.position.x, fy: f.g.position.y, fz: f.g.position.z, tx: nx, tz: nz };
+            f.state = 'hop'; f.g.rotation.y = na;
+          } else f.t = 1 + Math.random() * 3;
+        } else if (active && r < 0.8 && f.cd <= 0){
+          f.croak = 0.5; f.cd = 3 + Math.random() * 7; frogCroak(clamp01(1 - pd / 50) * 0.5, f.seed);
+          f.state = 'drowse'; f.t = 1 + Math.random() * 3;
+        } else f.t = 1.5 + Math.random() * 3.5;
+      }
+      if (f.croak > 0){
+        const cp = Math.sin(clamp01(1 - f.croak / 0.5) * Math.PI);
+        f.throat.scale.set(1 + cp * 1.6, 1 + cp * 2.2, 1 + cp * 1.4);
+        f.head.rotation.x = -cp * 0.25;
+      } else { f.throat.scale.set(1, 1, 1); f.head.rotation.x = 0; }
+    }
+  }
+}
+/* a frog croak: a couple of low resonant 'ribbit' pulses — throat, not boom */
+function frogCroak(vol, seed){
+  if (!audio || muted || vol <= 0.001) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  const base = 150 + (hash(seed, 991) || 0.5) * 90;
+  const pulses = 2 + ((hash(seed, 992) || 0.5) * 2 | 0);
+  let t = now;
+  for (let i = 0; i < pulses; i++){
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(base, t);
+    o.frequency.exponentialRampToValueAtTime(base * 1.5, t + 0.06);
+    o.frequency.exponentialRampToValueAtTime(base * 0.85, t + 0.12);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol), t + 0.02);
+    g.gain.exponentialRampToValueAtTime(vol * 0.3, t + 0.07);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = base * 2.2; bp.Q.value = 2.5;
+    o.connect(bp); bp.connect(g); g.connect(audio.master);
+    o.start(t); o.stop(t + 0.16);
+    t += 0.16 + (hash(seed * 7 + i, 993) || 0.5) * 0.05;
+  }
+}
+
 /* ---------- fox (dusk/night, bounding along streets) ---------- */
 const foxes = [];
 function makeFox(seed){
@@ -62654,6 +62829,7 @@ function stepFrame(dt){
   updateDeer(dt, dayF);
   updateFlock(dt, dayF);
   updateHerons(dt, dayF);
+  updateFrogs(dt, dayF);
   updateFox(dt, dayF);
   updateSquirrels(dt, dayF);
   updateRabbits(dt, dayF);
