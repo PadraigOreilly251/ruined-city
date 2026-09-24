@@ -5549,12 +5549,13 @@ function updateShootingStars(dt){
    regulars along the avenue. Grazing is deliberately NOT recorded — a field
    pitted with prints reads as panic, not pasture. */
 const TRACK_MAX = 9000;
-const TRACK_KINDS = { deer: 0, fox: 1, goose: 2, rabbit: 3 };
+const TRACK_KINDS = { deer: 0, fox: 1, goose: 2, rabbit: 3, sheep: 4 };
 const TRACK_SHAPE = [
   { w: 0.10, l: 0.24, off: 0.19 },   /* deer: paired cloven print */
   { w: 0.08, l: 0.11, off: 0.075 },  /* fox: narrow paw, near the centre line */
   { w: 0.18, l: 0.28, off: 0.15 },   /* goose: big webbed splay */
   { w: 0.045, l: 0.075, off: 0.035 },/* rabbit: tiny footfall, tight to the run */
+  { w: 0.07, l: 0.13, off: 0.1 },    /* sheep/goat: small cloven print, tighter pair than a deer */
 ];
 const TRACK = { n: 0, head: 0, season: -1, mesh: null, mat: null, enabled: true, stamped: 0,
   kind: new Uint8Array(TRACK_MAX),
@@ -5581,10 +5582,10 @@ function trackColor(k, out){
   /* In snow a track is a shadow in the surface, so it stays close to white; on dry
      ground it is earth worn through the turf, and much quieter. Both deliberately
      low-contrast: at full strength the prints read as flagstones laid on the map. */
-  if (season === 3 || wx.snow > 0.35) out.setHex([0xc6d0da, 0xc0cad4, 0xcbd4dd, 0xcdd7df][k]);
-  else if (season === 2) out.setHex([0x7a6746, 0x6f5c3e, 0x84714f, 0x7d6b4b][k]);
-  else if (season === 1) out.setHex([0x87744f, 0x7b6847, 0x8f7c57, 0x867351][k]);
-  else out.setHex([0x786a51, 0x6e6049, 0x817258, 0x7b6d54][k]);
+  if (season === 3 || wx.snow > 0.35) out.setHex([0xc6d0da, 0xc0cad4, 0xcbd4dd, 0xcdd7df, 0xc9d3dc][k]);
+  else if (season === 2) out.setHex([0x7a6746, 0x6f5c3e, 0x84714f, 0x7d6b4b, 0x7d6a49][k]);
+  else if (season === 1) out.setHex([0x87744f, 0x7b6847, 0x8f7c57, 0x867351, 0x8a7752][k]);
+  else out.setHex([0x786a51, 0x6e6049, 0x817258, 0x7b6d54, 0x7c6e55][k]);
   return out;
 }
 /* Trail decay: a track is only information for as long as the ground that holds it
@@ -6066,6 +6067,198 @@ function updateDeer(dt, dayF){
     a.eyeM.emissiveIntensity = Math.max(0, 0.65 - dayF) * 1.8 * Math.max(0, 1 - pd / 15);
   }
 }
+
+/* ---------- feral sheep & goats — a smallholding gone wild by the reservoir ----------
+   The town on the crest had a flock. Nobody came for it, so it stayed: a mixed
+   mob of sheep and a few hardier goats that graze the hilltop grass ringing the
+   drained basin. They bunch as a flock, keep off the concrete, drift back inside
+   their range, and scatter bleating if the wanderer crowds them. Gone at night. */
+const RESERVOIR = { x0: -178, x1: -152, z0: 245.5, z1: 264.5 };
+const FLOCK = { x: -158, z: 272, r: 11 };   /* the meadow south of the tank */
+const flockList = [];
+function inReservoir(x, z){ return x > RESERVOIR.x0 - 1.8 && x < RESERVOIR.x1 + 1.8 && z > RESERVOIR.z0 - 1.8 && z < RESERVOIR.z1 + 1.8; }
+function makeSheepGoat(x, z, scale, seed, goat){
+  const g = new THREE.Group();
+  const hue = hash(seed, 800);
+  let baseHex;
+  if (goat){
+    const pal = [0x8a6a44, 0x6a5a4a, 0x3a3230, 0x9a8a6a, 0x4a4a4a, 0xb0a088, 0x7a4f38];
+    baseHex = pal[Math.floor(hash(seed, 801) * pal.length)];
+  } else {
+    baseHex = new THREE.Color().setHSL(0.09 + (hue - 0.5) * 0.02, 0.11 + (hash(seed, 802) - 0.5) * 0.09, 0.72 + (hash(seed, 803) - 0.5) * 0.16).getHex();
+  }
+  const WOOL = lamber(baseHex), DARK = lamber(new THREE.Color(baseHex).multiplyScalar(0.55).getHex());
+  const faceMat = goat ? DARK : lamber(0x2c2823);
+  if (goat){
+    const body = new THREE.Mesh(B(0.4 * scale, 0.42 * scale, 0.74 * scale), WOOL); body.position.y = 0.58 * scale; body.castShadow = true; g.add(body);
+    const rump = new THREE.Mesh(B(0.36 * scale, 0.36 * scale, 0.3 * scale), WOOL); rump.position.set(0, 0.62 * scale, -0.28 * scale); rump.castShadow = true; g.add(rump);
+  } else {
+    const body = new THREE.Mesh(B(0.58 * scale, 0.52 * scale, 0.88 * scale), WOOL); body.position.y = 0.62 * scale; body.castShadow = true; g.add(body);
+    for (let k = 0; k < 6; k++){   /* wool lumps so the fleece reads fluffy, not a box */
+      const w = new THREE.Mesh(B(0.26 * scale, 0.22 * scale, 0.26 * scale), WOOL);
+      w.position.set((hash(seed, 810 + k) - 0.5) * 0.42 * scale, (0.82 + hash(seed, 820 + k) * 0.12) * scale, (hash(seed, 830 + k) - 0.5) * 0.62 * scale);
+      w.castShadow = true; g.add(w);
+    }
+  }
+  const legs = [];
+  const lw = (goat ? 0.07 : 0.09) * scale, lh = (goat ? 0.44 : 0.44) * scale, lsz = (goat ? 0.28 : 0.3) * scale;
+  for (const [lx, lz] of [[-0.15, -lsz], [0.15, -lsz], [-0.15, lsz], [0.15, lsz]]){
+    const leg = new THREE.Mesh(B(lw, lh, lw), DARK);
+    leg.position.set(lx * scale, lh / 2, lz); leg.castShadow = true; legs.push(leg); g.add(leg);
+  }
+  const neck = new THREE.Mesh(B(0.14 * scale, 0.3 * scale, 0.14 * scale), goat ? WOOL : faceMat);
+  neck.position.set(0, 0.82 * scale, 0.42 * scale); neck.rotation.x = 0.42; neck.castShadow = true; g.add(neck);
+  const head = new THREE.Group(); head.position.set(0, 0.96 * scale, 0.5 * scale);
+  const skull = new THREE.Mesh(B(0.16 * scale, 0.16 * scale, 0.28 * scale), faceMat); skull.position.set(0, 0, 0.08 * scale); skull.castShadow = true; head.add(skull);
+  const snout = new THREE.Mesh(B(0.1 * scale, 0.09 * scale, 0.16 * scale), faceMat); snout.position.set(0, -0.04 * scale, 0.25 * scale); head.add(snout);
+  for (const s of [-1, 1]){   /* ears: goats carry theirs out wide, sheep down and back */
+    const ear = new THREE.Mesh(B(0.06 * scale, 0.05 * scale, 0.15 * scale), faceMat);
+    ear.position.set(s * 0.11 * scale, 0.02 * scale, 0.0 * scale); ear.rotation.z = s * (goat ? -0.5 : 0.95); head.add(ear);
+  }
+  if (goat){
+    for (const s of [-1, 1]){   /* swept horns, raked back and out */
+      const horn = new THREE.Mesh(B(0.05 * scale, 0.3 * scale, 0.07 * scale), lamber(0x6a5a3a));
+      horn.position.set(s * 0.07 * scale, 0.15 * scale, -0.02 * scale); horn.rotation.set(-0.55, 0, s * 0.42); horn.castShadow = true; head.add(horn);
+    }
+    const beard = new THREE.Mesh(B(0.07 * scale, 0.13 * scale, 0.06 * scale), DARK); beard.position.set(0, -0.13 * scale, 0.2 * scale); beard.rotation.x = 0.35; head.add(beard);
+  } else {
+    const cap = new THREE.Mesh(B(0.22 * scale, 0.13 * scale, 0.18 * scale), WOOL); cap.position.set(0, 0.1 * scale, 0.12 * scale); cap.castShadow = true; head.add(cap);   /* wool forelock over the face */
+  }
+  const eyeM = new THREE.MeshLambertMaterial({ color: 0x141008, emissive: 0xffe2b8, emissiveIntensity: 0 });
+  for (const s of [-1, 1]){ const eye = new THREE.Mesh(B(0.032 * scale, 0.032 * scale, 0.02 * scale), eyeM); eye.position.set(s * 0.07 * scale, 0.03 * scale, 0.16 * scale); head.add(eye); }
+  g.add(head);
+  const tail = new THREE.Mesh(B(0.06 * scale, 0.06 * scale, 0.13 * scale), DARK); tail.position.set(0, 0.74 * scale, -0.46 * scale); g.add(tail);
+  g.position.set(x, groundH(x, z), z);
+  scene.add(g);
+  const a = { g, head, legs, seed, goat, phase: hash(seed, 1) * 6.28, legPh: hash(seed, 1) * 6.28, state: 'graze', t: 1 + Math.random() * 3, dir: Math.random() * 6.28, speed: 1, wander: hash(seed, 3) * 6.28, eyeM, bleatT: 0 };
+  flockList.push(a); DAY_ANIMALS.push(a);
+  return a;
+}
+/* place ~10 sheep + 4 goats on open grass ringing the reservoir (never on the tank) */
+{
+  let placed = 0, tries = 0;
+  while (placed < 10 && tries < 2000){
+    tries++;
+    const ang = hash(tries, 900) * 6.283, rad = 2 + hash(tries, 901) * FLOCK.r;
+    const x = FLOCK.x + Math.cos(ang) * rad, z = FLOCK.z + Math.sin(ang) * rad;
+    if (inReservoir(x, z)) continue;
+    if (groundH(x, z) < WATER_Y + 1.2) continue;
+    if (flockList.some(s => Math.hypot(s.g.position.x - x, s.g.position.z - z) < 2.6)) continue;
+    makeSheepGoat(x, z, 1.0 + hash(tries, 902) * 0.28, 3500 + tries, false);
+    placed++;
+  }
+  let gp = 0; tries = 0;
+  while (gp < 4 && tries < 1500){
+    tries++;
+    const ang = hash(tries + 900, 910) * 6.283, rad = 2 + hash(tries + 900, 911) * FLOCK.r;
+    const x = FLOCK.x + Math.cos(ang) * rad, z = FLOCK.z + Math.sin(ang) * rad;
+    if (inReservoir(x, z)) continue;
+    if (groundH(x, z) < WATER_Y + 1.2) continue;
+    if (flockList.some(s => Math.hypot(s.g.position.x - x, s.g.position.z - z) < 2.6)) continue;
+    makeSheepGoat(x, z, 0.82 + hash(tries + 900, 912) * 0.22, 4500 + tries, true);
+    gp++;
+  }
+}
+/* How hard the meadow holds the flock: nothing inside the soft core, ramping out. */
+function flockPull(a){
+  const dx = FLOCK.x - a.g.position.x, dz = FLOCK.z - a.g.position.z;
+  const d = Math.hypot(dx, dz);
+  const soft = FLOCK.r * 0.6;
+  if (d <= soft) return { x: 0, z: 0, out: false, d };
+  const k = Math.min(1.7, (d - soft) / Math.max(1, FLOCK.r * 0.4));
+  return { x: dx / (d || 1) * k, z: dz / (d || 1) * k, out: d > FLOCK.r, d };
+}
+/* Flock cohesion + range pull + wander, same boid recipe as the deer, and steered
+   around the tank with dryDir (which also keeps them off the water). */
+function flockDir(a, mates, dt){
+  a.wander += (Math.random() - 0.5) * dt * 3;
+  const f = herdFlock(a, mates), p = flockPull(a);
+  const vx = f.x + p.x + Math.sin(a.wander) * 0.32;
+  const vz = f.z + p.z + Math.cos(a.wander) * 0.32;
+  const want = Math.hypot(vx, vz) > 0.02 ? Math.atan2(vx, vz) : a.dir;
+  return dryDir(a.g.position.x, a.g.position.z, angTo(a.dir, want, 1 - Math.exp(-dt * 1.7)));
+}
+/* A bleat: not the noise-burst of a rustle but a tonal cry — saw wave, a fall
+   in pitch and a warble, short. Two sheep hearing each other is the sound of a
+   field nobody tends anymore. */
+function goatBleat(vol){
+  if (!audio || muted || vol <= 0) return;
+  const ctx = audio.ctx, now = ctx.currentTime;
+  const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+  const f0 = 320 + Math.random() * 160;
+  osc.frequency.setValueAtTime(f0, now);
+  osc.frequency.exponentialRampToValueAtTime(f0 * 0.72, now + 0.4);
+  const vib = ctx.createOscillator(); vib.type = 'sine'; vib.frequency.value = 16 + Math.random() * 8;
+  const vibG = ctx.createGain(); vibG.gain.value = 22; vib.connect(vibG); vibG.connect(osc.frequency);
+  const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600;
+  const g = ctx.createGain(); g.gain.value = 0.0001;
+  const dur = 0.34 + Math.random() * 0.22;
+  g.gain.exponentialRampToValueAtTime(vol, now + 0.06);
+  g.gain.exponentialRampToValueAtTime(vol * 0.5, now + dur * 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+  osc.connect(lp); lp.connect(g); g.connect(audio.master);
+  osc.start(now); vib.start(now); osc.stop(now + dur + 0.05); vib.stop(now + dur + 0.05);
+}
+const _fmates = [];
+function updateFlock(dt, dayF){
+  const raining = wx.rain > 0.5, winter = season === 3;
+  _fmates.length = 0; for (const a of flockList) _fmates.push(a);
+  for (const a of flockList){
+    a.t -= dt;
+    if (a.bleatT > 0) a.bleatT -= dt;
+    const pd = playerDist(a.g.position.x, a.g.position.z);
+    /* startle spreads through the flock: crowd one, they all go */
+    if (a.state === 'graze' || a.state === 'stand' || a.state === 'walk'){
+      let seen = pd < 11;
+      if (!seen) for (const o of flockList){
+        if (o === a) continue;
+        if (Math.hypot(o.g.position.x - a.g.position.x, o.g.position.z - a.g.position.z) < 22 && playerDist(o.g.position.x, o.g.position.z) < 11){ seen = true; break; }
+      }
+      if (seen){ a.state = 'flee'; a.t = 3 + Math.random() * 3; a.dir = faceYaw(a.g.position.x, a.g.position.z) + Math.PI; if (pd < 13 && a.bleatT <= 0){ goatBleat(clamp01(1 - pd / 13) * 0.14); a.bleatT = 2.5 + Math.random() * 3; } }
+    }
+    if (a.state === 'flee'){
+      if (flockPull(a).out) a.dir = flockDir(a, _fmates, dt);   /* run, but turn for home once clear of the range */
+      const sp = 3.3;
+      const nx = a.g.position.x + Math.sin(a.dir) * sp * dt, nz = a.g.position.z + Math.cos(a.dir) * sp * dt;
+      if (groundH(nx, nz) > WATER_Y + 0.5 && !inReservoir(nx, nz)){ a.g.position.x = nx; a.g.position.z = nz; }
+      else a.dir += 0.9;
+      a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.07;
+      a.g.rotation.y = a.dir; a.legPh += dt * 16;
+      const swing = Math.sin(a.legPh) * 0.6; a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });
+      a.head.rotation.x += (0.02 - a.head.rotation.x) * (1 - Math.exp(-dt * 3));
+      if (a.t <= 0 || pd > 24){ a.state = flockPull(a).out ? 'walk' : 'stand'; a.t = 3 + Math.random() * 4; }
+    } else {
+      if (a.t <= 0){
+        const r = Math.random();
+        if (raining){ a.state = 'stand'; a.t = 2 + Math.random() * 4; }
+        else if (a.state === 'graze'){ if (r < (winter ? 0.88 : 0.62)){ a.state = 'stand'; a.t = 2 + Math.random() * 4; } else a.t = 3 + Math.random() * 5; }
+        else {
+          if (r < (winter ? 0.78 : 0.5)){ a.state = 'walk'; a.t = 5 + Math.random() * 8; a.speed = 0.85; a.dir = flockDir(a, _fmates, dt); }
+          else { a.state = 'graze'; a.t = 3 + Math.random() * 5; }
+        }
+      }
+      let headT;
+      if (a.state === 'graze') headT = 1.3 + Math.sin(tSim * 1.3 + a.phase) * 0.08;
+      else if (a.state === 'stand') headT = 0.08 + Math.sin(tSim * 0.4 + a.phase) * 0.06;
+      else headT = 0.35;
+      a.head.rotation.x += (headT - a.head.rotation.x) * (1 - Math.exp(-dt * 2.5));
+      if (a.state === 'walk'){
+        a.dir = flockDir(a, _fmates, dt);
+        const nx = a.g.position.x + Math.sin(a.dir) * a.speed * dt, nz = a.g.position.z + Math.cos(a.dir) * a.speed * dt;
+        if (groundH(nx, nz) > WATER_Y + 0.5 && !inReservoir(nx, nz)){ a.g.position.x = nx; a.g.position.z = nz; }
+        else a.dir += 0.9;
+        a.g.position.y = groundH(a.g.position.x, a.g.position.z) + Math.max(0, Math.sin(a.legPh)) * 0.04;
+        a.g.rotation.y = a.dir; a.legPh += dt * (1.5 + a.speed * 5);
+        const swing = Math.sin(a.legPh) * 0.35; a.legs.forEach((l, k) => { l.rotation.x = swing * ((k === 0 || k === 3) ? 1 : -1); });
+        if (flockPull(a).out) a.t = Math.max(a.t, 4);
+      } else a.legs.forEach(l => { l.rotation.x *= 0.9; });
+      trackWalk(a, a.state === 'walk' ? 'sheep' : null, 1.5);
+    }
+    a.eyeM.emissiveIntensity = Math.max(0, 0.6 - dayF) * 1.6 * Math.max(0, 1 - pd / 14);
+    setAnimalScale(a, dt, (dayF > 0.3 ? 1 : 0) * (winter ? 0.92 : 1));
+  }
+}
+window._flock = flockList;
 
 /* ---------- fox (dusk/night, bounding along streets) ---------- */
 const foxes = [];
@@ -7816,6 +8009,7 @@ function stepFrame(dt){
   for (const L of CATH_LIGHTS) L.intensity = (1 - dayF) * (130 + Math.sin(tSim * 3.1) * 26);
   if (CATH_FLAME_MAT) CATH_FLAME_MAT.emissiveIntensity = (1 - dayF) * (3.2 + Math.sin(tSim * 5.3) * 0.8);
   updateDeer(dt, dayF);
+  updateFlock(dt, dayF);
   updateFox(dt, dayF);
   updateSquirrels(dt, dayF);
   updateRabbits(dt, dayF);
