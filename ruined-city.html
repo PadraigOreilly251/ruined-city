@@ -62699,6 +62699,86 @@ function updateBats(dt, dayF){
   }
 }
 
+/* ---------- wet-mud tracks: prints appear in the reservoir mud after rain ----------
+   A handful of ghost walkers (deer, goat, sheep, fox, and a keeper's boots) pace
+   the shoreline. While the ground is wet they leave dark prints; as the mud dries
+   the prints shrink and vanish, so the trail is transient — you only catch it in
+   the wet hours after a shower. */
+let mudWet = 0;
+const MUD_MAX = 720;
+const MUD_SHAPE = [ [0.085, 0.135], [0.10, 0.115], [0.115, 0.28] ];   /* hoof / paw / boot */
+const MUD_KINDS = [0, 0, 0, 1, 2];   /* deer, goat, sheep -> hoof; fox -> paw; keeper -> boot */
+const mudPrint = { n: 0, head: 0,
+  x: new Float32Array(MUD_MAX), z: new Float32Array(MUD_MAX), ry: new Float32Array(MUD_MAX),
+  k: new Uint8Array(MUD_MAX), born: new Float32Array(MUD_MAX) };
+let mudMesh, mudMat;
+{
+  mudMat = new THREE.MeshLambertMaterial({ color: 0x201b15, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+  mudMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mudMat, MUD_MAX);
+  mudMesh.frustumCulled = false; mudMesh.count = 0; mudMesh.renderOrder = 1;
+  scene.add(mudMesh);
+  const RCX = -165, RCZ = 255;
+  var mudWalkers = [];
+  for (let i = 0; i < 6; i++){
+    const a = hash(i, 1201) * 6.283, r = 6 + hash(i, 1202) * 11;
+    mudWalkers.push({ a, r, dir: hash(i, 1203) < 0.5 ? -1 : 1, spd: 0.9 + hash(i, 1204) * 1.1,
+      turn: hash(i, 1205) * 6.28, k: MUD_KINDS[i % MUD_KINDS.length], lastX: 0, lastZ: 0, since: 9, side: 1 });
+  }
+  window._MUD = { RCX, RCZ };
+  window.__mudWalkers = mudWalkers;
+  window.__mudProbe = () => ({ n: mudPrint.n, shown: mudMesh.count, wet: +mudWet.toFixed(3), opacity: +mudMat.opacity.toFixed(3) });
+}
+function mudStamp(x, z, ry, k){
+  const i = mudPrint.head; mudPrint.head = (mudPrint.head + 1) % MUD_MAX;
+  mudPrint.n = Math.max(mudPrint.n, i + 1);
+  mudPrint.x[i] = x; mudPrint.z[i] = z; mudPrint.ry[i] = ry; mudPrint.k[i] = k; mudPrint.born[i] = tSim;
+}
+const _mudM = new THREE.Matrix4(), _mudQ = new THREE.Quaternion(), _mudP = new THREE.Vector3(), _mudS = new THREE.Vector3();
+const _MUD_UP = new THREE.Vector3(0, 1, 0);
+function updateMudTracks(dt){
+  /* mud wets fast under rain and dries slowly afterwards */
+  const r = clamp01(wx.rain);
+  mudWet += (r - mudWet) * (1 - Math.exp(-dt * (r > mudWet ? 0.7 : 0.055)));
+  mudMat.opacity = 0.95 * mudWet;
+  const live = mudWet > 0.12 && season !== 3;
+  if (live){
+    const { RCX, RCZ } = window._MUD;
+    for (const wk of mudWalkers){
+      wk.a += wk.dir * (wk.spd * dt) / wk.r;
+      wk.r += Math.sin(tSim * 0.7 + wk.a * 3) * dt * 0.7;
+      if (wk.r < 4.5) wk.r = 4.5; if (wk.r > 18) wk.r = 18;
+      const x = RCX + Math.cos(wk.a) * wk.r * 1.15, z = RCZ + Math.sin(wk.a) * wk.r;
+      if (inReservoir(x, z)){ wk.a += wk.dir * 0.5; continue; }    /* walk around the tank */
+      const gh = groundH(x, z);
+      if (gh < WATER_Y + 0.3){ wk.r += 3; continue; }
+      const sh = MUD_SHAPE[wk.k];
+      const step = wk.k === 2 ? 0.82 : 0.62;
+      wk.since += Math.hypot(x - wk.lastX, z - wk.lastZ);
+      if (wk.since >= step){
+        wk.since = 0; wk.side *= -1;
+        const off = wk.side * sh[0] * 1.7;
+        mudStamp(x - Math.sin(wk.a) * off, z + Math.cos(wk.a) * off, -wk.a + wk.side * 0.12, wk.k);
+      }
+      wk.lastX = x; wk.lastZ = z;
+    }
+  }
+  /* render: fade each print over ~80s; scale out as it ages or as the mud dries */
+  let shown = 0;
+  for (let i = 0; i < mudPrint.n; i++){
+    const age = tSim - mudPrint.born[i];
+    const a = clamp01((80 - age) / 80) * mudWet;
+    if (a <= 0.02){ _mudS.set(0, 0, 0); _mudP.set(0, -99, 0); _mudQ.set(0, 0, 0, 1); _mudM.compose(_mudP, _mudQ, _mudS); mudMesh.setMatrixAt(shown++, _mudM); continue; }
+    const sh = MUD_SHAPE[mudPrint.k[i]];
+    const sc = 0.55 + 0.45 * clamp01(age / 2);   /* pop in */
+    _mudP.set(mudPrint.x[i], groundH(mudPrint.x[i], mudPrint.z[i]) + 0.035, mudPrint.z[i]);
+    _mudQ.setFromAxisAngle(_MUD_UP, mudPrint.ry[i]);
+    _mudS.set(sh[0] * sc * 2.3, 0.012, sh[1] * sc * 2.3 * (0.6 + 0.4 * clamp01(a)));
+    _mudM.compose(_mudP, _mudQ, _mudS); mudMesh.setMatrixAt(shown++, _mudM);
+  }
+  mudMesh.count = shown;
+  mudMesh.instanceMatrix.needsUpdate = true;
+}
+
 /* ---------- winter aurora: a shimmering curtain across the clear night sky ---------- */
 /* Big additive band riding high over the far-hill ring. Only a winter night that
    is properly dark and clear earns it — cloud or rain wipes it out. */
@@ -63319,6 +63399,7 @@ function stepFrame(dt){
   updateFireflies(dt, dayF);
   updateMidges(dt, dayF);
   updateAurora(dt);
+  updateMudTracks(dt);
   updatePollinators(dt, dayF);
   updateDragonflies(dt, dayF);
 }
