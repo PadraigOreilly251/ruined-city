@@ -61895,6 +61895,78 @@ function updatePollinators(dt, dayF){
   }
 }
 
+/* ---------- dragonflies over the tarn — the mirror of the lily pads below ----------
+   Thin iridescent bodies that hang station over the shallows, dart out on a
+   sudden hunt, and drift their home across the pond. Day-only, warm-season only,
+   and they tuck themselves away in the rain. Placed over the tarn so they read
+   as the living half of the water-lily shallows. */
+const dragonflies = [];
+{
+  const wingMat = new THREE.MeshLambertMaterial({ color: 0xcfe0ea, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false });
+  const bodies = [0x2e6f74, 0x356b3f, 0x2b5f86, 0x6f5a2a, 0x3a4a7a, 0x7a3f3f];
+  for (let i = 0; i < 7; i++){
+    const g = new THREE.Group();
+    const c = bodies[i % bodies.length], bodyMat = lamber(c);
+    const thorax = new THREE.Mesh(B(0.05, 0.05, 0.13), bodyMat); g.add(thorax);
+    const head = new THREE.Mesh(B(0.058, 0.052, 0.055), lamber(0x101820)); head.position.z = 0.09; g.add(head);
+    const abd = new THREE.Mesh(B(0.024, 0.024, 0.36), bodyMat); abd.position.z = -0.25; g.add(abd);
+    // four long narrow wings, fore pair ahead of the hind pair, out to the sides
+    const gfl = new THREE.BoxGeometry(0.36, 0.005, 0.075); gfl.translate(-0.19, 0, 0.03);
+    const gfr = new THREE.BoxGeometry(0.36, 0.005, 0.075); gfr.translate( 0.19, 0, 0.03);
+    const ghl = new THREE.BoxGeometry(0.34, 0.005, 0.085); ghl.translate(-0.18, 0, -0.06);
+    const ghr = new THREE.BoxGeometry(0.34, 0.005, 0.085); ghr.translate( 0.18, 0, -0.06);
+    const wfl = new THREE.Mesh(gfl, wingMat), wfr = new THREE.Mesh(gfr, wingMat);
+    const whl = new THREE.Mesh(ghl, wingMat), whr = new THREE.Mesh(ghr, wingMat);
+    g.add(wfl); g.add(wfr); g.add(whl); g.add(whr);
+    const ang = hash(i, 801) * 6.283, rad = 2.5 + hash(i, 802) * 8.5;
+    const hx = TARN.x + Math.cos(ang) * rad, hz = TARN.z + Math.sin(ang) * rad * 1.05;
+    g.position.set(hx, WATER_Y + 0.5, hz);
+    scene.add(g);
+    dragonflies.push({ g, wfl, wfr, whl, whr, hx, hz, tx: hx, tz: hz,
+      hover: 0.22 + hash(i, 803) * 0.6, state: 'hover', timer: 1 + hash(i, 804) * 4,
+      bobPh: hash(i, 805) * 6.28, wingPh: hash(i, 806) * 6.28, speed: 0.85 + hash(i, 807) * 0.7 });
+  }
+}
+function updateDragonflies(dt, dayF){
+  /* warm daylight over open water; gone at night, in winter, and in the rain */
+  const live = dayF > 0.5 && (season === 0 || season === 1) && wx.rain < 0.4 && wx.snow < 0.05 && tarnFreeze < 0.05;
+  for (const d of dragonflies){
+    setAnimalScale(d, dt, live ? 1 : 0);
+    if (!live) continue;
+    d.bobPh += dt * 2.1;
+    d.wingPh += dt * (30 + d.speed * 8);          // ~5–6 Hz shimmer
+    const y = WATER_Y + d.hover + Math.sin(d.bobPh) * 0.12;
+    if (d.state === 'hover'){
+      d.timer -= dt;
+      const sx = d.hx + Math.sin(d.bobPh * 0.7 + d.wingPh * 0.5) * 0.5;
+      const sz = d.hz + Math.cos(d.bobPh * 0.6) * 0.5;
+      d.g.position.set(sx, y, sz);
+      d.g.rotation.y += dt * 0.5 * Math.sin(d.bobPh * 0.5);   // lazy yaw drift
+      if (d.timer <= 0){
+        const a = Math.random() * 6.283, r = 2.5 + Math.random() * 4.5;
+        let ax = Math.cos(a) * r, az = Math.sin(a) * r;
+        const ar = Math.hypot(ax, az);
+        if (ar > 12.5){ ax *= 12.5 / ar; az *= 12.5 / ar; }   // keep them over the tarn
+        d.tx = TARN.x + ax; d.tz = TARN.z + az * 1.05; d.state = 'dart';
+      }
+    } else {
+      const dx = d.tx - d.g.position.x, dz = d.tz - d.g.position.z, dist = Math.hypot(dx, dz);
+      const step = d.speed * 5 * dt;
+      if (dist < step || dist < 0.25){
+        d.g.position.set(d.tx, y, d.tz);
+        d.hx = d.tx; d.hz = d.tz;                              // home follows — they patrol the pond
+        d.state = 'hover'; d.timer = 1 + Math.random() * 3.5;
+      } else {
+        d.g.position.set(d.g.position.x + dx / dist * step, y, d.g.position.z + dz / dist * step);
+        d.g.rotation.y = Math.atan2(dx, dz);
+      }
+    }
+    const f = Math.sin(d.wingPh) * 0.5, f2 = Math.sin(d.wingPh + 1.3) * 0.5;
+    d.wfl.rotation.z = f;  d.wfr.rotation.z = -f;
+    d.whl.rotation.z = f2; d.whr.rotation.z = -f2;
+  }
+}
+
 /* ---------- (leaves handled by the instanced autumn system above) ---------- */
 
 /* ============================================================
@@ -62204,6 +62276,7 @@ function stepFrame(dt){
   updateBats(dt, dayF);
   updateFireflies(dt, dayF);
   updatePollinators(dt, dayF);
+  updateDragonflies(dt, dayF);
 }
 
 /* Frame-rate governor: ease renderScale between 0.65 and 1 to hold a frame
@@ -62255,7 +62328,7 @@ window.__RC_SCENE__ = scene;      /* debug: scene + THREE for raycast probes */
 window.__RC_THREE__ = THREE;
 window.__RC_READY__ = true;
 window._deer = deerList; window._rabbits = rabbits; window._squirrels = [sq1, sq2]; window._hunt = hunt;
-window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators;
+window._cat = cat; window._birds = birds; window._bats = bats; window._pollinators = pollinators; window._dragonflies = dragonflies;
 window._perch = perch;
 
 /* ============================================================
