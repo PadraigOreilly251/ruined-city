@@ -58384,6 +58384,132 @@ const ferris = { wheel: null, gonds: [], spin: 0 };
   scene.add(g);
 }
 
+/* ---------- fairground detail around the ferris wheel ----------
+   The wheel sat alone in an empty field. Flesh out the north fairground with the
+   kit a small travelling fair would have left stranded: a leaning carousel with a
+   few painted horses on their brass poles, a ticket kiosk under a striped awning,
+   a run of string-light poles on sagging wire, and scattered props — a bench,
+   an overturned popcorn cart, deck chairs, a fallen banner, crates and kegs.
+   All static, placed on real ground, clustered around the wheel and the open
+   ground to its south. */
+{
+  const wood = lamber(0x6b4f34), woodD = lamber(0x493524), metal = lamber(0x7a6c5c);
+  const canvasA = lamber(0x8f9a6a), canvasB = lamber(0xbcae8c), signM = lamber(0x8a4636);
+  const brass = lamber(0x9a8552);
+  const castAll = (o) => o.traverse(m => { if (m.isMesh) m.castShadow = true; });
+
+  /* --- carousel: leaning platform, spindle, scalloped canopy, horses on poles --- */
+  {
+    const cx = -46, cz = -108, cgy = groundH(cx, cz);
+    const c = new THREE.Group();
+    const plat = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.7, 0.32, 16), lamber(0x8a7350));
+    plat.position.y = 0.16; plat.receiveShadow = true; c.add(plat);
+    const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.24, 4.4, 8), metal);
+    spindle.position.y = 2.2; c.add(spindle);
+    const canopy = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.0, 0.34, 12), canvasA);
+    canopy.position.y = 4.15; c.add(canopy);
+    const canopyTop = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.8, 10), canvasB);
+    canopyTop.position.y = 4.6; c.add(canopyTop);
+    for (let i = 0; i < 12; i++){                      /* scalloped rim valance */
+      const a = i / 12 * 6.283;
+      const sc = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.32, 0.08), (i % 2) ? canvasA : canvasB);
+      sc.position.set(Math.cos(a) * 3.6, 3.9, Math.sin(a) * 3.6); sc.rotation.y = -a; c.add(sc);
+    }
+    const horseCols = [0xcab48c, 0xa24c3c, 0x9aa06a, 0x8a6a4a, 0x70794f].map(h => lamber(h));
+    for (let i = 0; i < 5; i++){                       /* 5 of 8 seats — 3 left empty */
+      const a = i / 8 * 6.283 + 0.35, rr = 2.5, col = horseCols[i];
+      const hp = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.3, 0.24), col); body.position.y = 0.42; hp.add(body);
+      for (const lxz of [[0.22, 0.09], [0.22, -0.09], [-0.22, 0.09], [-0.22, -0.09]]){
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), col); leg.position.set(lxz[0], 0.19, lxz[1]); hp.add(leg);
+      }
+      const neck = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.42, 0.16), col); neck.position.set(0.3, 0.64, 0); neck.rotation.z = -0.5; hp.add(neck);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.16, 0.15), col); head.position.set(0.49, 0.8, 0); hp.add(head);
+      const tail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.05), woodD); tail.position.set(-0.36, 0.5, 0); tail.rotation.z = 0.6; hp.add(tail);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.5, 6), brass); pole.position.y = 1.55; hp.add(pole);
+      hp.position.set(Math.cos(a) * rr, 0.32, Math.sin(a) * rr); hp.rotation.y = -a + 1.571;
+      if (i === 1) hp.rotation.z = 0.5;                /* one hung askew */
+      c.add(hp);
+    }
+    c.position.set(cx, cgy, cz); c.rotation.set(0.02, 0.5, 0.08); castAll(c); scene.add(c);
+  }
+
+  /* --- ticket kiosk with striped awning, facing the fair --- */
+  {
+    const kx = -63, kz = -104, kgy = groundH(kx, kz);
+    const k = new THREE.Group();
+    const booth = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.2, 1.8), canvasA); booth.position.y = 1.1; k.add(booth);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.22, 2.3), canvasB); roof.position.y = 2.35; roof.rotation.z = 0.05; k.add(roof);
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 0.5), wood); counter.position.set(0, 1.08, 1.05); k.add(counter);
+    const aw = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.08, 1.0), canvasB); aw.position.set(0, 1.58, 1.35); aw.rotation.x = 0.55; k.add(aw);
+    for (let i = 0; i < 5; i++){ const st = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.09, 1.02), signM);
+      st.position.set(-1.12 + i * 0.56, 1.585, 1.35); st.rotation.x = 0.55; k.add(st); }
+    const board = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.62, 0.1), signM); board.position.set(0, 2.78, 0.15); k.add(board);
+    const boardTxt = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 0.05), canvasB); boardTxt.position.set(0, 2.78, 0.22); k.add(boardTxt);
+    k.position.set(kx, kgy, kz); k.rotation.y = 1.15; castAll(k); scene.add(k);
+  }
+
+  /* --- string-light poles on a run of sagging wire, framing the front of the fair --- */
+  {
+    const AX = -67, AZ = -100, BX = -40, BZ = -103, n = 6;
+    const tops = [];
+    for (let i = 0; i <= n; i++){
+      const t = i / n, px = AX + (BX - AX) * t, pz = AZ + (BZ - AZ) * t, g = groundH(px, pz);
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.12, 4.2, 0.12), woodD);
+      pole.position.set(px, g + 2.1, pz); pole.castShadow = true; scene.add(pole);
+      const cross = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.1), woodD); cross.position.set(px, g + 4.05, pz); scene.add(cross);
+      tops.push(new THREE.Vector3(px, g + 3.95, pz));
+    }
+    for (let i = 0; i < n; i++){
+      const p0 = tops[i], p1 = tops[i + 1];
+      const mid = p0.clone().lerp(p1, 0.5); mid.y -= 0.7;
+      const curve = new THREE.CatmullRomCurve3([p0, mid, p1]);
+      const wire = new THREE.Mesh(new THREE.TubeGeometry(curve, 8, 0.03, 5, false), lamber(0x2f2c28)); scene.add(wire);
+      for (let b = 1; b <= 3; b++){
+        const pt = curve.getPoint(b / 4);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.11, 6, 5), lamber(0xd8c88a));
+        bulb.position.set(pt.x, pt.y - 0.1, pt.z); scene.add(bulb);
+      }
+    }
+  }
+
+  /* --- scattered props clustered where the ground opens up south of the wheel --- */
+  {
+    /* a bench */
+    const bn = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.5), wood); seat.position.y = 0.5; bn.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 0.1), wood); back.position.set(0, 0.8, -0.22); back.rotation.x = -0.12; bn.add(back);
+    for (const lx of [-0.75, 0.75]){ const lg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.45), woodD); lg.position.set(lx, 0.25, 0); bn.add(lg); }
+    bn.position.set(-57, groundH(-57, -101), -101); bn.rotation.y = 0.4; castAll(bn); scene.add(bn);
+
+    /* overturned popcorn cart */
+    const pc = new THREE.Group();
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.9, 0.8), canvasB); cab.position.y = 0.55; pc.add(cab);
+    const ptop = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.12, 0.95), signM); ptop.position.y = 1.05; pc.add(ptop);
+    const glass = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.06), lamber(0x9fb0b4)); glass.position.set(0, 0.6, 0.42); pc.add(glass);
+    for (const wx of [-0.4, 0.4]){ const w = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.1, 10), lamber(0x3a3630)); w.position.set(wx, 0.12, 0.5); w.rotation.x = 1.2; pc.add(w); }
+    pc.position.set(-51, groundH(-51, -100), -100); pc.rotation.set(1.4, 0.6, 0.2); castAll(pc); scene.add(pc);  /* tipped on its side */
+
+    /* two deck chairs */
+    for (const dxz of [[-60, -99, 0.9], [-55, -103, 2.2]]){
+      const dc = new THREE.Group();
+      const s = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 1.2), (dxz[2] > 1) ? canvasA : signM); s.position.y = 0.35; s.rotation.x = 0.35; dc.add(s);
+      for (const [lx, lz] of [[0.24, 0.4], [-0.24, 0.4], [0.24, -0.4], [-0.24, -0.4]]){ const lg = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.06), woodD); lg.position.set(lx, 0.2, lz); dc.add(lg); }
+      dc.position.set(dxz[0], groundH(dxz[0], dxz[1]) + 0.02, dxz[1]); dc.rotation.y = dxz[2]; castAll(dc); scene.add(dc);
+    }
+
+    /* a fallen banner laid flat */
+    const fb = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.06, 1.0), signM); fb.position.set(-60, groundH(-60, -105) + 0.03, -105); fb.rotation.y = -0.5; fb.castShadow = true; scene.add(fb);
+    const fb2 = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.065, 0.6), canvasB); fb2.position.set(-60, groundH(-60, -105) + 0.05, -105); fb2.rotation.y = -0.5; scene.add(fb2);
+
+    /* crates and a keg */
+    for (const cxz of [[-53, -105], [-58, -107], [-49, -103]]){
+      const cr = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), wood); cr.position.set(cxz[0], groundH(cxz[0], cxz[1]) + 0.25, cxz[1]); cr.rotation.y = cxz[0]; castAll(cr); scene.add(cr);
+    }
+    const keg = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.7, 10), woodD); keg.position.set(-54.5, groundH(-54.5, -99) + 0.35, -99); keg.castShadow = true; scene.add(keg);
+  }
+}
+
 /* ---------- dock: rowboats + buoys + boathouse (west shore of the lake) ---------- */
 const dockBob = { row1: null, buoys: [] };
 {
