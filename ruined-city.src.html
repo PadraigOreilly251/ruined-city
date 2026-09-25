@@ -105,6 +105,7 @@ function vnoise(x, z){
 }
 function fbm(x, z){ return 0.6*vnoise(x,z) + 0.3*vnoise(x*2.1+7.3, z*2.1+2.1) + 0.1*vnoise(x*4.3+1.7, z*4.3+9.2); }
 const clamp01 = t => Math.max(0, Math.min(1, t));
+const sstep = (a, b, v) => { const u = clamp01((v - a) / (b - a)); return u * u * (3 - 2 * u); };
 const clampN = (t,a,b) => Math.max(a, Math.min(b, t));
 
 /* ---------- hash params (headless / manual control) ---------- */
@@ -365,6 +366,11 @@ function riverX(z){
   return 118 + 8*Math.sin(z*0.011 + 2.6) + 4*Math.sin(z*0.027 + 4.7) + 2*Math.sin(z*0.049 + 5.5);
 }
 const BRIDGE_X = riverX(0);                 /* river centreline at the crossing */
+/* The z=0 avenue, continued on the EAST bank. The bridge used to dead-end in a
+   bare field; this runs the road east off the bridge's east foot and up the
+   hillside until it dissolves into the high ground. */
+const ROAD_E_X0 = BRIDGE_X + 15;            /* east foot of the bridge, h≈0 */
+const ROAD_E_X1 = 208;                       /* where the road fades into the hill */
 function waterCenterX(z){
   if (z < 150) return riverX(z);
   const t = Math.pow(clamp01((z - 150) / 25), 2);   /* river mouth eases into the lake */
@@ -379,6 +385,15 @@ function waterHalfWidth(z){
 }
 
 /* ---------- terrain heights ---------- */
+/* Continuous (un-stepped) hill + meadow height. Used to grade the continued
+   east avenue so the road is a smooth ramp instead of a flight of 2.2 m steps.
+   Mirrors the first half of groundH's base terrain, minus the voxel quantising. */
+function hillSmooth(x, z){
+  const d = Math.max(Math.abs(x), Math.abs(z));
+  let h = Math.pow(clamp01((d - 96) / 190), 1.35) * (13 + 30 * fbm(x*0.016 + 3.7, z*0.016 + 9.1));
+  if (d > 94){ const u = (fbm(x*0.05 + 31, z*0.05 + 17) - 0.5) * 1.5; h += u; }
+  return Math.max(0, h - 2.2);
+}
 function groundH(x, z){
   /* city: flat */
   if (Math.abs(x) < 96 && Math.abs(z) < 96) return 0;
@@ -394,6 +409,17 @@ function groundH(x, z){
     h += lerpN(u, Math.floor(u / 0.35) * 0.35, stepF);
   }
   h = Math.max(0, h - 2.2);
+  /* continued east avenue: grade a smooth road corridor along z=0 from the
+     bridge's east foot up the hillside. Full de-stepped smoothing down the
+     centreline, feathered back to the natural (terraced) ground across the
+     width, and tapered to nothing at both ends so it eases onto the bridge at
+     one end and onto the natural hill at the other — no cut-face or end-wall. */
+  if (x > ROAD_E_X0 && x < ROAD_E_X1 && Math.abs(z) < 9.5){
+    const along = Math.sin(clamp01((x - ROAD_E_X0) / (ROAD_E_X1 - ROAD_E_X0)) * Math.PI);
+    const lat = 1 - sstep(4.6, 9.5, Math.abs(z));
+    const w = along * lat;
+    if (w > 0.001) h = lerpN(h, hillSmooth(x, 0), w);
+  }
   /* cove shore shelf: terrace the surrounding hills down to a low plain so the
      bay reads as a natural basin instead of a deep pit, and the sea takes over
      past the map's south edge */
@@ -512,6 +538,19 @@ let groundGeo = null;
     if (inWater) c.copy(EARTH_C).lerp(new THREE.Color('#2e3432'), 0.65);   /* muddy bed */
     else if (onBank) c.copy(EARTH_C).lerp(new THREE.Color('#8d8672'), 0.5); /* gravel bank */
     else if (Math.abs(z) < 4.5 && x > 92 && x < BRIDGE_X - 6) c.copy(ASPHALT_D).lerp(ASPHALT_L, 0.45); /* avenue up to the bridge */
+    else if (Math.abs(z) < 4.8 && x > ROAD_E_X0 - 3 && x < ROAD_E_X1){
+      /* continued avenue on the east bank: worn, faded country road. Two darker
+         wheel-ruts, a grassier crown between them, cracks and overgrowth that
+         thicken eastward until the road dissolves into the hill. */
+      c.copy(ASPHALT_D).lerp(ASPHALT_L, clamp01(0.22 + 0.55 * n));
+      const rut = Math.exp(-Math.pow(Math.abs(z) - 1.4, 2) / 0.5);
+      c.lerp(new THREE.Color('#2c2c28'), rut * 0.38);
+      const fade = Math.max(0, (x - (ROAD_E_X1 - 24)) / 24);   /* peter out over the last 24 m */
+      const crown = Math.exp(-(z * z) / 1.2);
+      c.lerp(GRASS_D, crown * 0.22 + fade * 0.4);
+      if (hash(Math.floor(x), Math.floor(z)) < 0.12 + fade * 0.2) c.lerp(GRASS_D, 0.5);
+      if (hash(Math.floor(x), Math.floor(z) + 3) < 0.14) c.lerp(new THREE.Color('#41413c'), 0.55);
+    }
     else if (onRoad){
       c.copy(ASPHALT_D).lerp(ASPHALT_L, clamp01(0.25 + 0.6*n));
       if (hash(Math.floor(x), Math.floor(z)) < 0.13) c.lerp(new THREE.Color('#41413c'), 0.6);
@@ -1382,7 +1421,14 @@ CLEAR_ZONES.push(
   { x: 4,    z: 256, r: 37 },   /* the listening array: an antenna field is cleared land */
   { x: TARN.x, z: TARN.z, r: TARN.r + 6 }   /* the tarn: no trees rooted in the waterline */
 );
-const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r);
+/* the continued east avenue: keep trees/reeds/props off the pavement, tapering
+   the cleared width as the road fades into the hill at its east end */
+const onEastRoad = (x, z) => {
+  if (x < ROAD_E_X0 - 3 || x > ROAD_E_X1) return false;
+  const fade = clamp01((x - (ROAD_E_X1 - 26)) / 26);   /* verge narrows as road dissolves */
+  return Math.abs(z) < lerpN(7.0, 2.5, fade);
+};
+const inClearZone = (x, z) => CLEAR_ZONES.some(c => Math.hypot(x - c.x, z - c.z) < c.r) || onEastRoad(x, z);
 
 /* ---------- building placement across the 4x4 blocks ---------- */
 const BLOCKS = [];   /* keep for vegetation exclusion */
@@ -4058,6 +4104,27 @@ const ferris = { wheel: null, gonds: [], spin: 0 };
       const cr = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.6), wood); cr.position.set(cxz[0], groundH(cxz[0], cxz[1]) + 0.25, cxz[1]); cr.rotation.y = cxz[0]; castAll(cr); scene.add(cr);
     }
     const keg = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.7, 10), woodD); keg.position.set(-54.5, groundH(-54.5, -99) + 0.35, -99); keg.castShadow = true; scene.add(keg);
+  }
+}
+
+/* ---- a milestone + leaning guide posts on the continued east avenue ----
+   A weathered route stone just past the bridge and a couple of leaning
+   guide posts down the hillside, so the continued road reads as a road that
+   led somewhere rather than just a patch of coloured ground. */
+{
+  const stone = lamber(0x9a9280), stoneD = lamber(0x6f6a5e), woodD = lamber(0x493524);
+  const castAll = (o) => o.traverse(m => { if (m.isMesh) m.castShadow = true; });
+  const ms = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.3, 0.72), stoneD); base.position.y = 0.15; ms.add(base);
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.4), stone); post.position.y = 0.85; ms.add(post);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.18, 0.52), stoneD); cap.position.y = 1.53; ms.add(cap);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.52, 0.06), lamber(0x8a5a3a)); plate.position.set(0, 0.98, 0.21); ms.add(plate);
+  ms.position.set(141, groundH(141, 6.2) - 0.05, 6.2); ms.rotation.y = 0.2; castAll(ms); scene.add(ms);
+  for (const gp0 of [[166, 5.9, 0.14], [189, -6.0, -0.10]]){
+    const g = new THREE.Group();
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.6, 0.16), woodD); p.position.y = 0.8; g.add(p);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.12), woodD); arm.position.set(0.22, 1.42, 0); g.add(arm);
+    g.position.set(gp0[0], groundH(gp0[0], gp0[1]) - 0.05, gp0[1]); g.rotation.z = gp0[2]; castAll(g); scene.add(g);
   }
 }
 
